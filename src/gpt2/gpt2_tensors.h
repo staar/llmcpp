@@ -96,7 +96,7 @@ namespace llmcpp
 
   public:
 
-    index_type V, C, L, maxT;
+    index_type V, Vp, C, L, maxT;
 
     llm_tensor_type wte; // (V, C)
     llm_tensor_type wpe; // (maxT, C)
@@ -144,14 +144,17 @@ namespace llmcpp
   template<typename index_type, typename value_type>
   bool gpt2_weights<index_type, value_type>::initialise(gpt2_model_config& config)
   {
+    LOG_S(INFO) << "initialising the GPT2 weights ...";
+    
     V = config.vocab_size;
+    Vp = config.padded_vocab_size;
     C = config.channels;
     L = config.num_layers;
     maxT = config.max_seq_len;
 
-    LOG_S(INFO) << "V = " << V << "; C = " << C << "; L = " << L << "; maxT = " << maxT;
+    //LOG_S(INFO) << "V = " << V << << "Vp = " << Vp << "; C = " << C << "; L = " << L << "; maxT = " << maxT;
     
-    wte.initialise("weight-embedding", {V, C}, false);
+    wte.initialise("weight-embedding", {V, C}, {Vp, C}, false);
     wpe.initialise("positional-embedding", {maxT, C}, false);
 
     ln1w.initialise("ln1w", {L, C}, false);
@@ -300,6 +303,8 @@ namespace llmcpp
                      index_type NH, // #-heads
                      index_type V); // vocabulary size
 
+    bool initialise(gpt2_model_config& config);
+    
     //gpt2_activations(const nlohmann::json& config);
 
     friend std::ofstream& operator<<(std::ofstream& ofs, gpt2_activations<index_type, value_type>& acts);
@@ -307,9 +312,10 @@ namespace llmcpp
 
   public:
 
-    index_type L, B, T, C, NH, V;
+    index_type L, B, T, C, NH, V, Vp;
 
     llm_tensor_type encoded; // (B, T, C)
+
     llm_tensor_type ln1; // (L, B, T, C)
     llm_tensor_type ln1_mean; // (L, B, T)
     llm_tensor_type ln1_rstd; // (L, B, T)
@@ -326,6 +332,7 @@ namespace llmcpp
     llm_tensor_type fch_gelu; // (L, B, T, 4*C)
     llm_tensor_type fcproj; // (L, B, T, C)
     llm_tensor_type residual3; // (L, B, T, C)
+
     llm_tensor_type lnf; // (B, T, C)
     llm_tensor_type lnf_mean; // (B, T)
     llm_tensor_type lnf_rstd; // (B, T)
@@ -368,6 +375,55 @@ namespace llmcpp
     losses("losses", {B, T})
   {}
 
+  template<typename index_type, typename value_type>
+  bool gpt2_activations<index_type, value_type>::initialise(gpt2_model_config& config)
+  {
+    LOG_S(INFO) << "initialising the GPT2 activations ...";
+    
+    B = config.batch_size;
+    T = config.max_seq_len;
+    L = config.num_layers;
+    C = config.channels;
+    NH = config.num_heads;
+    V = config.vocab_size;
+    Vp = config.padded_vocab_size;
+    
+    encoded.initialise("encoded", {B, T, C}, false);
+
+    ln1.initialise("layer_norm_1", {L, B, T, C}, false);
+    ln1_mean.initialise("layer_norm_1_mean", {L, B, T}, false);
+    ln1_rstd.initialise("layer_norm_1_rstd", {L, B, T}, false);
+
+    qkv.initialise("qkv", {L, B, T, 3*C}, false);
+    atty.initialise("atty", {L, B, T, C}, false);
+    preatt.initialise("preattn", {L, B, NH, T, T}, false);
+    att.initialise("att", {L, B, NH, T, T}, false);
+    attproj.initialise("attproj", {L, B, T, C}, false);
+
+    residual2.initialise("residual2", {L, B, T, C}, false);
+
+    ln2.initialise("layer_norm_2", {L, B, T, C}, false);
+    ln2_mean.initialise("layer_norm_2_mean", {L, B, T}, false);
+    ln2_rstd.initialise("layer_norm_2_rstd", {L, B, T}, false);
+    
+    fch.initialise("fch", {L, B, T, 4*C}, false);
+    fch_gelu.initialise("fch_gelu", {L, B, T, 4*C}, false);
+    fcproj.initialise("fcproj", {L, B, T, C}, false);
+
+    residual3.initialise("residual3", {L, B, T, C}, false);
+
+    lnf.initialise("layer_norm_f", {B, T, C}, false);
+    lnf_mean.initialise("layer_norm_f_mean", {B, T}, false);
+    lnf_rstd.initialise("layer_norm_f_rstd", {B, T}, false);
+
+    logits.initialise("logits", {B, T, V}, {B, T, Vp}, false);
+    probs.initialise("probs", {B, T, V}, {B, T, Vp}, false);
+
+    losses.initialise("losses", {B, T}, false);
+
+    return true;
+  }
+  
   template<typename index_type, typename value_type>
   std::ofstream& operator<<(std::ofstream& ofs, gpt2_activations<index_type, value_type>& acts)
   {

@@ -164,6 +164,12 @@ int main(int argc, char *argv[])
     {
       auto config = model->create_config();
       LOG_S(WARNING) << "config: " << config.dump(2);
+
+      std::ofstream ofs("config-example.json");
+      if(ofs)
+	{
+	  ofs << config;
+	}
     }
   else if(mode=="train-tokenize")
     {
@@ -179,6 +185,26 @@ int main(int argc, char *argv[])
     }
   else if(mode=="predict")
     {
+      model->initialise(config);
+      
+      std::vector<std::vector<int> > inputs = {};
+      std::vector<std::vector<int> > outputs = {};
+
+      int B = model->get_B();
+      int maxT = model->get_maxT();
+      
+      inputs.resize(B, {});
+      outputs.resize(B, {});
+      for(int b=0; b<B; b++)
+	{
+	  for(int t=0; t<maxT; t++)
+	    {
+	      inputs.at(b).push_back(b+t);
+	      outputs.at(b).push_back(b+t+1);
+	    }
+	}
+      
+      model->forward(inputs, outputs);
     }
   else
     {

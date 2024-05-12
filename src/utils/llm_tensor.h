@@ -22,7 +22,16 @@ namespace llmcpp
     llm_tensor(std::string name, std::vector<index_type> dims, bool col_major);
 
     bool initialise(std::string name, std::vector<index_type> dims, bool col_major);
+    bool initialise(std::string name,
+		    std::vector<index_type> dims,
+		    std::vector<index_type> ldims,
+		    bool col_major);
 
+    value_type& operator()(index_type i);
+    value_type& operator()(index_type i, index_type j);
+    value_type& operator()(index_type i, index_type j, index_type k);
+    value_type& operator()(index_type i, index_type j, index_type k, index_type l);
+    
     value_type* ptr();
     value_type* ptr(const std::vector<index_type>& coor);
 
@@ -35,7 +44,7 @@ namespace llmcpp
       uint64_t vals_len = tnsr.weights->size();
 
       LOG_S(INFO) << "writing " << tnsr.name
-                  << " [memsize: " << std::scientific << vals_len << "]";
+                  << " [memsize: " << std::scientific << double(vals_len+0.0)/1.e9 << " Gb]";
 
       ofs.write((char*)&name_len, sizeof(name_len));
       ofs.write((char*)&dims_len, sizeof(dims_len));
@@ -133,17 +142,29 @@ namespace llmcpp
     steps({}),
     weights(NULL)
   {
-    initialise(UNKNOWN_NAME, dims, col_major);
+    initialise(name, dims, col_major);
   }
 
   template<typename index_type, typename value_type>
-  bool llm_tensor<index_type, value_type>::initialise(std::string name, std::vector<index_type> dims, bool col_major)
+  bool llm_tensor<index_type, value_type>::initialise(std::string name,
+						      std::vector<index_type> dims,
+						      bool col_major)
+  {
+    return initialise(name, dims, dims, col_major);
+  }
+
+  template<typename index_type, typename value_type>
+  bool llm_tensor<index_type, value_type>::initialise(std::string name,
+						      std::vector<index_type> dims,
+						      std::vector<index_type> ldims,
+						      bool col_major)
   {
     this->name = name;
     this->col_major = col_major;
 
+    assert(dims.size()==ldims.size());
     this->dims = dims;
-    this->ldims = dims;
+    this->ldims = ldims;
 
     this->steps = std::vector<index_type>(dims.size(), 1);
     if(col_major)
@@ -173,16 +194,90 @@ namespace llmcpp
         size *= ldims.at(j);
       }
 
-    LOG_S(INFO) << "init " << name << "(" << ldims.size() << "): " << size;
+    std::stringstream ss1;
+    ss1 << "[" << dims.at(0);
+    for(std::size_t j=1; j<dims.size(); j++)
+      ss1 << " x " << dims.at(j);
+    ss1 << "]";
+
+    std::stringstream ss2;
+    ss2 << "[" << steps.at(0);
+    for(std::size_t j=1; j<steps.size(); j++)
+      ss2 << " x " << steps.at(j);
+    ss2 << "]";
+    
+    LOG_S(INFO) << " => init " 
+		<< std::setw(9) << std::scientific << double(size+0.0)/1.e9 << " GB"
+		<< " for " << name << "(D=" << ldims.size() << "): " << ss1.str() << ", " << ss2.str();
     
     weights = std::make_shared<std::vector<value_type> >(size, 0);
+    assert(weights->size()==size);
+
     return true;
   }
 
   template<typename index_type, typename value_type>
+  value_type& llm_tensor<index_type, value_type>::operator()(index_type i)
+  {
+    assert(dims.size()==1);
+    assert(0<=i and i<dims.at(0));
+
+    return weights->at(i);
+  }
+
+  template<typename index_type, typename value_type>
+  value_type& llm_tensor<index_type, value_type>::operator()(index_type i, index_type j)
+  {
+    assert(dims.size()==2);
+    assert(0<=i and i<dims.at(0));
+    assert(0<=j and j<dims.at(1));
+
+    index_type ind = 0;
+    ind += steps.at(0)*i;
+    ind += steps.at(1)*j;
+
+    return weights->at(ind);
+  }
+
+  template<typename index_type, typename value_type>
+  value_type& llm_tensor<index_type, value_type>::operator()(index_type i, index_type j, index_type k)
+  {
+    assert(dims.size()==3);
+    assert(0<=i and i<dims.at(0));
+    assert(0<=j and j<dims.at(1));
+    assert(0<=k and j<dims.at(2));
+
+    index_type ind = 0;
+    ind += steps.at(0)*i;
+    ind += steps.at(1)*j;
+    ind += steps.at(2)*k;
+
+    return weights->at(ind);
+  }
+  
+  template<typename index_type, typename value_type>
+  value_type& llm_tensor<index_type, value_type>::operator()(index_type i, index_type j,
+							     index_type k, index_type l)
+  {
+    assert(dims.size()==4);
+    assert(0<=i and i<dims.at(0));
+    assert(0<=j and j<dims.at(1));
+    assert(0<=k and j<dims.at(2));
+    assert(0<=l and j<dims.at(3));
+
+    index_type ind = 0;
+    ind += steps.at(0)*i;
+    ind += steps.at(1)*j;
+    ind += steps.at(2)*k;
+    ind += steps.at(3)*l;
+
+    return weights->at(ind);
+  }
+  
+  template<typename index_type, typename value_type>
   value_type* llm_tensor<index_type, value_type>::ptr()
   {
-    weights->data();
+    return weights->data();
   }
 
   template<typename index_type, typename value_type>
