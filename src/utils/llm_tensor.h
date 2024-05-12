@@ -21,6 +21,10 @@ namespace llmcpp
     llm_tensor(std::string name, std::vector<index_type> dims);
     llm_tensor(std::string name, std::vector<index_type> dims, bool col_major);
 
+    index_type size(index_type d);
+    
+    void to_zero();
+    
     bool initialise(std::string name, std::vector<index_type> dims, bool col_major);
     bool initialise(std::string name,
 		    std::vector<index_type> dims,
@@ -145,6 +149,28 @@ namespace llmcpp
     initialise(name, dims, col_major);
   }
 
+  template<typename index_type, typename value_type>
+  index_type llm_tensor<index_type, value_type>::size(index_type d)
+  {
+    assert(d<dims.size());
+    return dims.at(d);
+  }
+  
+  template<typename index_type, typename value_type>
+  void llm_tensor<index_type, value_type>::to_zero()
+  {
+    if(weights==NULL)
+      {
+	LOG_S(ERROR) << "applied `to_zero` on uninitialised tensor ...";
+	return;
+      }
+
+    for(auto itr=weights->begin(); itr!=weights->end(); itr++)
+      {
+	*itr = 0.0;
+      }
+  }
+  
   template<typename index_type, typename value_type>
   bool llm_tensor<index_type, value_type>::initialise(std::string name,
 						      std::vector<index_type> dims,

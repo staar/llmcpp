@@ -181,6 +181,32 @@ int main(int argc, char *argv[])
     {
       model->initialise(config);
 
+      std::vector<std::vector<int> > inputs = {};
+      std::vector<std::vector<int> > outputs = {};
+
+      int B = model->get_B();
+      int maxT = model->get_maxT();
+      
+      inputs.resize(B, {});
+      outputs.resize(B, {});
+      for(int b=0; b<B; b++)
+	{
+	  for(int t=0; t<maxT; t++)
+	    {
+	      inputs.at(b).push_back(b+t);
+	      outputs.at(b).push_back(b+t+1);
+	    }
+	}
+
+      llmcpp::llm_tensor<int, int> itokens("itokens", {B, maxT}, false);
+      llmcpp::llm_tensor<int, int> otokens("otokens", {B, maxT}, false);
+      
+      model->to_tensor(inputs, itokens);
+      model->to_tensor(outputs, otokens);
+      
+      model->forward(itokens, otokens);
+      model->backward(itokens, otokens);
+      
       model->write("gpt2-model.bin");
     }
   else if(mode=="predict")
@@ -203,8 +229,19 @@ int main(int argc, char *argv[])
 	      outputs.at(b).push_back(b+t+1);
 	    }
 	}
+
+      llmcpp::llm_tensor<int, int> itokens("itokens", {B, maxT}, false);
+      llmcpp::llm_tensor<int, int> otokens("otokens", {B, maxT}, false);
+
+      model->to_tensor(inputs, itokens);
+      model->to_tensor(outputs, otokens);
       
-      model->forward(inputs, outputs);
+      model->forward(itokens, otokens);
+      //model->backward(itokens, otokens);
+      
+      model->write("gpt2-model.bin");
+      
+
     }
   else
     {

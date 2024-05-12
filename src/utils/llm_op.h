@@ -32,7 +32,7 @@ namespace llmcpp
   void encoder<index_type, value_type>::forward(float* out,
                                                 int* inp, float* wte, float* wpe,
                                                 int B, int T, int C) {
-    LOG_S(INFO) << "encoder::" << __FUNCTION__;
+    //LOG_S(INFO) << "encoder::" << __FUNCTION__;
     
     // out is (B,T,C). At each position (b,t), a C-dimensional vector summarizing token & position
     // inp is (B,T) of integers, holding the token ids at each (b,t) position
@@ -93,7 +93,7 @@ namespace llmcpp
   void layernorm<index_type, value_type>::forward(float* out, float* mean, float* rstd,
                                                   float* inp, float* weight, float* bias,
                                                   int B, int T, int C) {
-    LOG_S(INFO) << "layernorm::" << __FUNCTION__;
+    //LOG_S(INFO) << "layernorm::" << __FUNCTION__;
     
     // reference: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
     // both inp and out are (B,T,C) of the activations
@@ -197,7 +197,7 @@ namespace llmcpp
   void matmul<index_type, value_type>::forward(float* out,
                                                float* inp, float* weight, float* bias,
                                                int B, int T, int C, int OC) {
-    LOG_S(INFO) << "matmul::" << __FUNCTION__;
+    //LOG_S(INFO) << "matmul::" << __FUNCTION__;
 
     // most of the running time is spent here and in matmul_backward
     // OC is short for "output channels"
@@ -285,7 +285,7 @@ namespace llmcpp
   void attention<index_type, value_type>::forward(float* out, float* preatt, float* att,
                                                   float* inp,
                                                   int B, int T, int C, int NH) {
-    LOG_S(INFO) << "attantion::" << __FUNCTION__;
+    //LOG_S(INFO) << "attantion::" << __FUNCTION__;
 
     // input is (B, T, 3C) holding the query, key, value (Q, K, V) vectors
     // preatt, att are (B, NH, T, T). NH = number of heads, T = sequence length
@@ -435,7 +435,7 @@ namespace llmcpp
 
   template<typename index_type, typename value_type>
   void gelu<index_type, value_type>::forward(float* out, float* inp, int N) {
-    LOG_S(INFO) << "gelu::" << __FUNCTION__;
+    //LOG_S(INFO) << "gelu::" << __FUNCTION__;
 
     // (approximate) GeLU elementwise non-linearity in the MLP block of Transformer
     for (int i = 0; i < N; i++) {
@@ -476,7 +476,7 @@ namespace llmcpp
 
   template<typename index_type, typename value_type>
   void residual<index_type, value_type>::forward(float* out, float* inp1, float* inp2, int N) {
-    LOG_S(INFO) << "residual::" << __FUNCTION__;
+    //LOG_S(INFO) << "residual::" << __FUNCTION__;
     
     for (int i = 0; i < N; i++) {
       out[i] = inp1[i] + inp2[i];
@@ -502,7 +502,7 @@ namespace llmcpp
 
   template<typename index_type, typename value_type>
   void softmax<index_type, value_type>::forward(float* probs, float* logits, int B, int T, int V, int Vp) {
-    LOG_S(INFO) << "softmax::" << __FUNCTION__;
+    //LOG_S(INFO) << "softmax::" << __FUNCTION__;
 
     // output: probs are (B,T,Vp) of the probabilities (sums to 1.0 in each b,t position)
     // input: logits is (B,T,Vp) of the unnormalized log probabilities
@@ -549,13 +549,17 @@ namespace llmcpp
     static void forward(float* losses,
                         float* probs, int* targets,
                         int B, int T, int Vp);
-  };
+
+    static void softmax_backward(float* dlogits,
+				 float* dlosses, float* probs, int* targets,
+				 int B, int T, int V, int Vp);
+    };
 
   template<typename index_type, typename value_type>
   void crossentropy<index_type, value_type>::forward(float* losses,
                                                      float* probs, int* targets,
                                                      int B, int T, int Vp) {
-    LOG_S(INFO) << "crossentropy::" << __FUNCTION__;
+    //LOG_S(INFO) << "crossentropy::" << __FUNCTION__;
 
     // output: losses is (B,T) of the individual losses at each position
     // input: probs are (B,T,Vp) of the probabilities
@@ -570,6 +574,29 @@ namespace llmcpp
     }
   }
 
+  template<typename index_type, typename value_type>
+  void crossentropy<index_type, value_type>::softmax_backward(float* dlogits,
+							      float* dlosses, float* probs, int* targets,
+							      int B, int T, int V, int Vp) {
+    // backwards through both softmax and crossentropy
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            float* dlogits_bt = dlogits + b * T * Vp + t * Vp;
+            float* probs_bt = probs + b * T * Vp + t * Vp;
+            float dloss = dlosses[b * T + t];
+            int ix = targets[b * T + t];
+            // note we only loop to V, leaving the padded dimensions
+            // of dlogits untouched, so gradient there stays at zero
+            for (int i = 0; i < V; i++) {
+                float p = probs_bt[i];
+                float indicator = i == ix ? 1.0f : 0.0f;
+                dlogits_bt[i] += (p - indicator) * dloss;
+            }
+        }
+    }
+}
+
+  
 
 }
 
