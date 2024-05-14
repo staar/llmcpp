@@ -3,6 +3,44 @@
 #ifndef LLM_OP_H
 #define LLM_OP_H
 
+namespace blas
+{
+  /*
+  extern "C" void sgemv_(const char* trans,
+			 const int* M, const int* N, const float *alpha, const float* A , const int* LDA,
+			 const float* x, const int *incx,
+			 const float* beta,
+			 float* y, const int *incy);
+  */
+  
+  extern "C" void sgemm_(const char* transA, const char* transB,
+			 const int* M, const int* N, const int* K,
+			 const float *alpha,
+			 const float* A, const int* LDA,
+			 const float* B, const int *LDB,
+			 const float* beta,
+			 const float* C, const int *LDC);
+
+  template<typename value_type>
+  struct gemm
+  {};
+
+  template<>
+  struct gemm<float>
+  {
+    static void execute(const char transA, const char transB,
+		 const int M, const int N, const int K,
+		 const float alpha,
+		 const float* A, const int LDA,
+		 const float* B, const int LDB,
+		 const float beta,
+		 const float* C, const int LDC)
+    {
+      sgemm_(&transA, &transB, &M, &N, &K, &alpha, A, &LDA, B, &LDB, &beta, C, &LDC);
+    }
+  };  
+}
+
 namespace llmcpp
 {
   template<typename index_type, typename value_type>
@@ -178,6 +216,8 @@ namespace llmcpp
     }
   }
 
+
+  
   template<typename index_type, typename value_type>
   class matmul
   {
@@ -191,12 +231,33 @@ namespace llmcpp
     static void backward(float* dinp, float* dweight, float* dbias,
                          float* dout, float* inp, float* weight,
                          int B, int T, int C, int OC);
+
+    static bool forward_test();
+    
+  private:
+
+    static void forward_orig(float* out,
+			     float* inp, float* weight, float* bias,
+			     int B, int T, int C, int OC);
+
+    static void forward_blas(float* out,
+			     float* inp, float* weight, float* bias,
+			     int B, int T, int C, int OC);
   };
+
 
   template<typename index_type, typename value_type>
   void matmul<index_type, value_type>::forward(float* out,
                                                float* inp, float* weight, float* bias,
-                                               int B, int T, int C, int OC) {
+                                               int B, int T, int C, int OC)
+  {
+    forward_blas(out, inp, weight, bias, B, T, C, OC);
+  }
+  
+  template<typename index_type, typename value_type>
+  void matmul<index_type, value_type>::forward_orig(float* out,
+						    float* inp, float* weight, float* bias,
+						    int B, int T, int C, int OC) {
     //LOG_S(INFO) << "matmul::" << __FUNCTION__;
 
     // most of the running time is spent here and in matmul_backward
@@ -220,7 +281,87 @@ namespace llmcpp
       }
     }
   }
+  
+  template<typename index_type, typename value_type>
+  void matmul<index_type, value_type>::forward_blas(float* out,
+						    float* inp, float* weight, float* bias,
+						    int B, int T, int C, int OC) {
+    //LOG_S(INFO) << "matmul::" << __FUNCTION__;
 
+    // most of the running time is spent here and in matmul_backward
+    // OC is short for "output channels"
+    // inp is (B,T,C), weight is (OC, C), bias is (OC)
+    // out will be (B,T,OC)
+
+    float alpha = 1.0, beta = 0.0;
+    if(bias != NULL)
+      {
+	beta = 1.0;
+
+	float* out_bt = NULL; 
+	for (int b = 0; b < B; b++) {
+	  for (int t = 0; t < T; t++) {
+
+	    out_bt = out + b * T * OC + t * OC;
+	    for (int o = 0; o < OC; o++) {
+	      out_bt[o] = bias[o];
+	    }
+	  }
+	}
+      }
+
+    // row-major = inp is (B,T,C), weight is (OC, C), bias is (OC), out is (B,T,OC)
+    // col-major = inp is (C,T,B), weight is (C, OC), bias is (OC), out is (OC,T,B)
+    
+    blas::gemm<value_type>::execute('T', 'N', OC, B*T, C, alpha,
+				    weight, C, 
+				    inp, C,
+				    beta, out, OC);
+  }
+
+  template<typename index_type, typename value_type>
+  bool matmul<index_type, value_type>::forward_test()
+  {
+    int B=3, T=5, C=7, OC=13;
+
+    llm_tensor<int, float> A, W, C1, C2;
+    A.initialise("A", {B, T, C}, false);
+    W.initialise("W", {C, OC}, false);
+    
+    C1.initialise("C1", {B, T, OC}, false);
+    C2.initialise("C2", {B, T, OC}, false);
+
+    for (int b = 0; b < B; b++) {
+      for (int t = 0; t < T; t++) {
+	for (int i = 0; i < C; i++) {
+	  A(b, t, i) = b + t + i;
+	}
+      }
+    }
+    
+    for (int i = 0; i < C; i++) {
+      for (int o = 0; o < OC; o++) {
+	W(i, o) = (o-4) * i;
+      }
+    }
+    
+    forward_orig(C1.ptr(), A.ptr(), W.ptr(), NULL, B, T, C, OC);
+    forward_blas(C2.ptr(), A.ptr(), W.ptr(), NULL, B, T, C, OC);
+
+    value_type maxdiff=0;
+    for (int b = 0; b < B; b++) {
+      for (int t = 0; t < T; t++) {
+	for (int i = 0; i < OC; i++) {
+	  value_type diff = std::abs(C1(b,t,i)-C2(b,t,i));
+	  maxdiff = maxdiff>diff? maxdiff : diff; 
+	}
+      }
+    }
+
+    LOG_S(INFO) << "diff: " << maxdiff;
+    return true;
+  }
+  
   template<typename index_type, typename value_type>
   void matmul<index_type, value_type>::backward(float* dinp, float* dweight, float* dbias,
                                                 float* dout, float* inp, float* weight,
@@ -265,8 +406,6 @@ namespace llmcpp
     }
   }
 
-
-
   template<typename index_type, typename value_type>
   class attention
   {
@@ -297,7 +436,7 @@ namespace llmcpp
     int C3 = C*3;
     int hs = C / NH; // head size
     float scale = 1.0 / sqrtf(hs);
-
+    
     //#pragma omp parallel for collapse(3)
     for (int b = 0; b < B; b++) {
       for (int t = 0; t < T; t++) {
@@ -541,6 +680,47 @@ namespace llmcpp
     }
   }
 
+  /*
+    The cross-entropy C is defined as,
+
+    C = - \sum_b \sum_t \sum_v p(b,t,v)*log(q(b,t,v))
+
+    where,
+
+    p(b,t,v) is the target probability on batch b, time t and vocab token v
+    q(b,t,v) is the predicted probability on batch b, time t and vocab token v
+
+    Since, p(b,t,v) is one-hot encoded (i.e. is a delta function), we end up 
+    
+    C = - \sum_b \sum_t log(q(b,t,v^t(b,t)))
+
+    where,
+
+    v^t(b,t) is the target token index at batch b and time t.
+
+    Often, the predicted probability q(b,t,v) is obtained via softmax over the
+    logits (represented by l), where,
+
+    q(b,t,v) = e^{l(b,t,v)-l_{max}(b,v)}/Z(b,t) with,
+
+    l_{max}(b,v) = max(l(b,t,v) | for all v in {0,V})
+    Z(b,t) = \sum_v e^{l(b,t,v)-l_{max}(b,v)}
+
+    Now the gradient over the logits is defined as,
+
+    grad(l) = d(C)/d(l(b,t,v))
+            = - \sum_b \sum_t \sum_w p(b,t,w)* d(log(q(b,t,w)))/d(l(b,t,v))
+            
+    now, log(q(b,t,w)) = l(b,t,w) - log(\sum_w e^{l(b,t,w)}), so,
+    
+    grad(l) = - \sum_b \sum_t \sum_w p(b,t,w) * (\delta_{v,w} - d(log(\sum_w e^{l(b,t,w)}))/d(l(b,t,v)) )
+
+    with d(log(\sum_w e^{l(b,t,w)}))/d(l(b,t,v)) = 1 / (\sum_w e^{l(b,t,w)}) * d(\sum_w e^{l(b,t,w)})/d(l(b,t,v)
+)                                                = 1 / (\sum_w e^{l(b,t,w)}) * e^{l(b,t,v)}
+                                                 := q(b,t,v)
+
+    grad(l)(b,t,v) = - \sum_b \sum_t \sum_w p(b,t,w) * (\delta_{v,w}-q(b,t,v))
+  */
   template<typename index_type, typename value_type>
   class crossentropy
   {

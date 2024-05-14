@@ -44,7 +44,7 @@ bool parse_arguments(int argc, char *argv[], nlohmann::json& args)
   std::string mode = result["mode"].as<std::string>();
   args["mode"] = mode;
   
-  std::set<std::string> modes = {"create-configs","train","predict"};
+  std::set<std::string> modes = {"create-configs","train","predict","test"};
   if(modes.count(mode)==0)
     {
       LOG_S(WARNING) << "mode `" << mode
@@ -53,7 +53,7 @@ bool parse_arguments(int argc, char *argv[], nlohmann::json& args)
       return false;
     }
   
-  if(mode=="create-configs")
+  if(mode=="create-configs" or mode=="test")
     {
       return true;
     }
@@ -114,6 +114,13 @@ int update_args(nlohmann::json& args,
       config["mode"]="create-configs";
       return 0;
     }
+
+  if(args.count("mode")==1 and
+     args["mode"].get<std::string>()=="test")
+    {
+      config["mode"]="test";
+      return 0;
+    }
   
   if(args.count("config")==1 and
      args["config"]!="null")
@@ -159,8 +166,12 @@ int main(int argc, char *argv[])
   std::string mode = config.value("mode", "null");
 
   auto model = std::make_shared<llmcpp::gpt2_model<int, float> >();
-  
-  if(mode=="create-configs")
+
+  if(mode=="test")
+    {
+      llmcpp::matmul<int, float>::forward_test();
+    }
+  else if(mode=="create-configs")
     {
       auto config = model->create_config();
       LOG_S(WARNING) << "config: " << config.dump(2);

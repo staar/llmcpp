@@ -20,7 +20,7 @@ elseif(APPLE)
    #set(LIB_LINK json loguru cxxopts pcre2 fasttext utf8 andromeda_pos ${OPENSSL_LIBRARIES} ldap z)
    #set(LIB_LINK json loguru cxxopts pcre2 fasttext utf8 ${OPENSSL_LIBRARIES} ldap z)
    #set(LIB_LINK fmt json loguru cxxopts pcre2 sentencepiece sentencepiece_train fasttext utf8 ldap z)
-   set(LIB_LINK json loguru cxxopts ldap z)	
+   set(LIB_LINK blas json loguru cxxopts ldap z)	
 
    list(APPEND LIB_LINK ${FoundationLib} ${SystemConfigurationLib})
    
