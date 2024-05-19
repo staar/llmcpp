@@ -169,7 +169,11 @@ int main(int argc, char *argv[])
 
   if(mode=="test")
     {
-      llmcpp::matmul<int, float>::forward_test();
+      llmcpp::matmul<int, float>::test_forward();
+      llmcpp::matmul<int, float>::test_backward();
+
+      llmcpp::attention<int, float>::test_forward();
+      llmcpp::attention<int, float>::test_backward();
     }
   else if(mode=="create-configs")
     {

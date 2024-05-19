@@ -3,6 +3,10 @@
 #ifndef LLM_TENSOR_H
 #define LLM_TENSOR_H
 
+#include <string>
+#include <vector>
+#include <random>
+
 namespace llmcpp
 {
   template<typename index_type, typename value_type>
@@ -10,6 +14,8 @@ namespace llmcpp
   {
     const inline static std::string UNKNOWN_NAME = "<unknowm>";
 
+    typedef llm_tensor<index_type, value_type> this_type;
+    
   public:
 
     llm_tensor();
@@ -24,17 +30,27 @@ namespace llmcpp
     index_type size(index_type d);
     
     void to_zero();
+    void to_rand();
     
-    bool initialise(std::string name, std::vector<index_type> dims, bool col_major);
-    bool initialise(std::string name,
-		    std::vector<index_type> dims,
-		    std::vector<index_type> ldims,
-		    bool col_major);
+    this_type& initialise(std::string name,
+			  std::vector<index_type> dims,
+			  bool col_major);
 
+    this_type& initialise(std::string name,
+			  std::vector<index_type> dims,
+			  std::vector<index_type> ldims,
+			  bool col_major);
+
+    value_type& operator[](index_type i);
     value_type& operator()(index_type i);
     value_type& operator()(index_type i, index_type j);
     value_type& operator()(index_type i, index_type j, index_type k);
     value_type& operator()(index_type i, index_type j, index_type k, index_type l);
+
+    value_type max_diff(this_type& tnsr);
+
+    typename std::vector<value_type>::iterator begin();
+    typename std::vector<value_type>::iterator end();
     
     value_type* ptr();
     value_type* ptr(const std::vector<index_type>& coor);
@@ -172,18 +188,38 @@ namespace llmcpp
   }
   
   template<typename index_type, typename value_type>
-  bool llm_tensor<index_type, value_type>::initialise(std::string name,
-						      std::vector<index_type> dims,
-						      bool col_major)
+  void llm_tensor<index_type, value_type>::to_rand()
+  {
+    if(weights==NULL)
+      {
+	LOG_S(ERROR) << "applied `to_rand` on uninitialised tensor ...";
+	return;
+      }
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    
+    // Generate float numbers between 0 and 1
+    std::uniform_real_distribution<value_type> dist(0.0f, 1.0f); 
+    for(auto itr=weights->begin(); itr!=weights->end(); itr++)
+      {
+	*itr = dist(gen);
+      }
+  }
+
+  template<typename index_type, typename value_type>
+  llm_tensor<index_type, value_type>& llm_tensor<index_type, value_type>::initialise(std::string name,
+										     std::vector<index_type> dims,
+										     bool col_major)
   {
     return initialise(name, dims, dims, col_major);
   }
 
   template<typename index_type, typename value_type>
-  bool llm_tensor<index_type, value_type>::initialise(std::string name,
-						      std::vector<index_type> dims,
-						      std::vector<index_type> ldims,
-						      bool col_major)
+  llm_tensor<index_type, value_type>& llm_tensor<index_type, value_type>::initialise(std::string name,
+										     std::vector<index_type> dims,
+										     std::vector<index_type> ldims,
+										     bool col_major)
   {
     this->name = name;
     this->col_major = col_major;
@@ -239,7 +275,7 @@ namespace llmcpp
     weights = std::make_shared<std::vector<value_type> >(size, 0);
     assert(weights->size()==size);
 
-    return true;
+    return *this;
   }
 
   template<typename index_type, typename value_type>
@@ -271,7 +307,7 @@ namespace llmcpp
     assert(dims.size()==3);
     assert(0<=i and i<dims.at(0));
     assert(0<=j and j<dims.at(1));
-    assert(0<=k and j<dims.at(2));
+    assert(0<=k and k<dims.at(2));
 
     index_type ind = 0;
     ind += steps.at(0)*i;
@@ -298,6 +334,33 @@ namespace llmcpp
     ind += steps.at(3)*l;
 
     return weights->at(ind);
+  }
+
+  template<typename index_type, typename value_type>
+  value_type llm_tensor<index_type, value_type>::max_diff(this_type& tnsr)
+  {
+    value_type result = 0, delta=0;
+    
+    auto itr_j = tnsr.begin();
+    for(auto itr_i=weights->begin(); itr_i!=weights->end() and itr_j!=tnsr.end(); itr_i++, itr_j++)
+      {
+	delta = std::abs(*itr_i-*itr_j);
+	result = std::max(delta, result); 
+      }
+
+    return result;
+  }
+
+  template<typename index_type, typename value_type>
+  typename std::vector<value_type>::iterator llm_tensor<index_type, value_type>::begin()
+  {
+    return weights->begin();
+  }
+  
+  template<typename index_type, typename value_type>
+  typename std::vector<value_type>::iterator llm_tensor<index_type, value_type>::end()
+  {
+    return weights->end();
   }
   
   template<typename index_type, typename value_type>
