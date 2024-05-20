@@ -3,15 +3,16 @@
 #ifndef LLM_OP_H
 #define LLM_OP_H
 
+/*
 namespace blas
 {
-  /*
+
   extern "C" void sgemv_(const char* trans,
 			 const int* M, const int* N, const float *alpha, const float* A , const int* LDA,
 			 const float* x, const int *incx,
 			 const float* beta,
 			 float* y, const int *incy);
-  */
+
   
   extern "C" void sgemm_(const char* transA, const char* transB,
 			 const int* M, const int* N, const int* K,
@@ -40,17 +41,21 @@ namespace blas
     }
   };  
 }
+*/
+
+#include <utils/blas.h>
+
+#include <llm_op/matmul.h>
+#include <llm_op/attention.h>
 
 namespace llmcpp
 {
+  /*
   template<typename index_type, typename value_type>
   class llm_base_op
-  {
-
-
-  };
-
-
+  {};
+  */
+  
   template<typename index_type, typename value_type>
   class encoder
   {
@@ -216,8 +221,7 @@ namespace llmcpp
     }
   }
 
-
-  
+  /*
   template<typename index_type, typename value_type>
   class matmul
   {
@@ -487,7 +491,9 @@ namespace llmcpp
 				      beta, dweight, C);
     }
   }
-  
+*/
+
+  /*
   template<typename index_type, typename value_type>
   class attention
   {
@@ -720,28 +726,9 @@ namespace llmcpp
 
     value_type max_diff = 0;
 
-    /*
-    for(int i=0; i<10; i++)
-      {
-	LOG_S(INFO) <<  preatt1(0, 0, i, 0) << "\t" << preatt2(0, 0, i, 0);
-      }
-    max_diff = preatt1.max_diff(preatt2);
-    LOG_S(INFO) << "max-diff: " << max_diff;
-    */
-    
     forward_orig(out1.ptr(), preatt1.ptr(), att1.ptr(), inp.ptr(), B, T, C, NH);
     forward_blas(out2.ptr(), preatt2.ptr(), att2.ptr(), inp.ptr(), B, T, C, NH);
 
-    /*
-    for(int i=0; i<5; i++)
-      {
-	for(int j=0; j<5; j++)
-	  {
-	    LOG_S(INFO) << i << "," << j << ": " << preatt1(0, 1, i, j) << "\t" << preatt2(0, 1, i, j);
-	  }
-      }
-    */
-    
     max_diff = preatt1.max_diff(preatt2);
     LOG_S(INFO) << "max-diff pre-attn: " << max_diff;
 
@@ -844,21 +831,6 @@ namespace llmcpp
 	//float* value_t2 = inp + b * T * C3 + t2 * C3 + h * hs + C*2; // +C*2 because it's value
 	float* value_bh = inp + b * T * C3 + h * HS + C*2; // +C*2 because it's value
 	
-	/*
-	for (int t1 = 0; t1 < T; t1++) {
-	  for (int t2 = 0; t2 <= t1; t2++) {
-	    datt_bh[t1*T+t2] = 0;
-	    for (int i = 0; i < HS; i++) {
-
-	      // in the forward pass this was:
-	      // out_bth[i] += att_bth[t2] * value_t2[i];
-	      // so now we have:
-	      datt_bh[t1*T+t2] += dout_bh[t1*C+i] * value_bh[t2*C3+i]; 
-	      }
-	  }
-	}
-	*/
-
 	value_type alpha = 1.0, beta = 0.0;
 	blas::gemm<value_type>::execute('T', 'N', T, T, HS, alpha,
 					value_bh, 3*C,
@@ -878,17 +850,6 @@ namespace llmcpp
 	//float* dvalue_t2 = dinp + b * T * C3 + t2 * C3 + h * hs + C*2;
 	float* dvalue_bh = dinp + b * T * C3 + h * HS + C*2;
 
-	/*
-	for (int t2 = 0; t2 < T; t2++) {
-	  for (int i = 0; i < HS; i++) {
-	    dvalue_bh[t2*C3+i] = 0;
-	    for (int t1 = 0; t1 < T; t1++) {
-	      dvalue_bh[t2*C3+i] += att_bh[t1*T+t2] * dout_bh[t1*C+i];
-	    }
-	  }
-	}
-	*/
-	
 	//value_type alpha = 1.0, beta = 0.0;
 	blas::gemm<value_type>::execute('N', 'T', HS, T, T, alpha,
 					dout_bh, C, 
@@ -899,36 +860,6 @@ namespace llmcpp
 	// note that softmax (like e.g. tanh) doesn't need the input (preatt) to backward
 	//float* dpreatt_bth = dpreatt + b*NH*T*T + h*T*T + t1*T;
 	float* dpreatt_bh = dpreatt + b*NH*T*T + h*T*T;
-
-	/*
-	for (int t1 = 0; t1 < T; t1++) {
-	  for (int t3 = 0; t3 <= t1; t3++) {	    
-	    dpreatt_bh[t1*T+t3] = 0;
-	    for (int t2 = 0; t2 <= t1; t2++) {
-              float indicator = t2 == t3 ? 1.0f : 0.0f;
-              float local_derivative = att_bh[t1*T+t2] * (indicator - att_bh[t1*T+t3]);
-              dpreatt_bh[t1*T+t3] += local_derivative * datt_bh[t1*T+t2];
-            }
-          }
-	}
-	*/
-
-	/*
-	for (int t1 = 0; t1 < T; t1++) {
-	  for (int t3 = 0; t3 < T; t3++) {	    
-
-	    dpreatt_bh[t1*T+t3] = 0;
-	    for (int t2 = 0; t2 < T; t2++) {
-              //float indicator = t2 == t3 ? 1.0f : 0.0f;
-              //float local_derivative = att_bh[t1*T+t2] * (indicator - att_bh[t1*T+t3]);
-              //dpreatt_bh[t1*T+t3] += local_derivative * datt_bh[t1*T+t2];
-
-	      dpreatt_bh[t1*T+t3] -= att_bh[t1*T+t2] * att_bh[t1*T+t3] * datt_bh[t1*T+t2]; 
-	    }
-	    dpreatt_bh[t1*T+t3] += att_bh[t1*T+t3] * datt_bh[t1*T+t3];
-          }
-	}
-	*/
 
 	std::vector<value_type> tmp(T, 0);
 	for (int t1 = 0; t1 < T; t1++) {
@@ -965,40 +896,12 @@ namespace llmcpp
 	//float* dkey_t2 = dinp + b * T * C3 + t2 * C3 + h * HS + C; // +C because it's key
 	float* dkey_bh = dinp + b * T * C3 + h * HS + C; // +C because it's key
 
-	/*
-	for (int t1 = 0; t1 < T; t1++) {
-          // backward pass 1, the query @ key matmul
-	  for (int i = 0; i < HS; i++) {
-	    for (int t2 = 0; t2 <= t1; t2++) {
-              // in the forward pass this was:
-              // preatt_bth[t2] += (query_t[i] * key_t2[i]) * scale;
-              // so now we have:
-              dquery_bh[t1*C3+i] += key_bh[t2*C3+i] * dpreatt_bh[t1*T+t2] * scale;
-	    }
-          }
-	}
-	*/
-	
 	blas::gemm<value_type>::execute('N', 'N', HS, T, T, scale,
 					key_bh, 3*C,
 					dpreatt_bh, T, 
 					beta, dquery_bh, 3*C);
 		
 	// backward pass 1, the query @ key matmul
-
-	/*
-	for (int i = 0; i < HS; i++) {
-	  for (int t1 = 0; t1 < T; t1++) {
-	    for (int t2 = 0; t2 <= t1; t2++) {
-              // in the forward pass this was:
-              // preatt_bth[t2] += (query_t[i] * key_t2[i]) * scale;
-              // so now we have:
-              //dquery_t[t1*C3+i] += key_t2[t2*C3+i] * dpreatt_bth[t1*T+t2] * scale;
-              dkey_bh[t2*C3+i] += query_bh[t1*C3+i] * dpreatt_bh[t1*T+t2] * scale;
-	    }
-          }
-	}
-	*/
 
 	blas::gemm<value_type>::execute('N', 'T', HS, T, T, scale,
 					query_bh, 3*C,
@@ -1045,19 +948,12 @@ namespace llmcpp
     dinp2.initialise("dinp2", {B, T, 3*C}, false).to_zero();
 
     value_type max_diff = 0;
-
-    /*
-      for(int i=0; i<10; i++)
-      {
-      LOG_S(INFO) <<  preatt1(0, 0, i, 0) << "\t" << preatt2(0, 0, i, 0);
-      }
-      max_diff = preatt1.max_diff(preatt2);
-      LOG_S(INFO) << "max-diff: " << max_diff;
-    */
     
     backward_orig(dinp1.ptr(), dpreatt1.ptr(), datt1.ptr(), dout.ptr(), inp.ptr(), att.ptr(), B, T, C, NH);
     backward_blas(dinp2.ptr(), dpreatt2.ptr(), datt2.ptr(), dout.ptr(), inp.ptr(), att.ptr(), B, T, C, NH);
 
+    if(false)
+      {
     for(int i=0; i<5; i++)
       {
 	for(int j=0; j<5; j++)
@@ -1067,6 +963,7 @@ namespace llmcpp
 			<< datt2(1, 1, i, j) << "\t"
 			<< std::abs(datt2(1, 1, i, j)-datt1(1, 1, i, j));
 	  }
+      }
       }
     
     max_diff = datt1.max_diff(datt2);
@@ -1103,6 +1000,7 @@ namespace llmcpp
     max_diff = dinp1.max_diff(dinp2);
     LOG_S(INFO) << "max-diff dinp: " << max_diff;
   }
+  */
   
   template<typename index_type, typename value_type>
   class gelu

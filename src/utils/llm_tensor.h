@@ -27,7 +27,9 @@ namespace llmcpp
     llm_tensor(std::string name, std::vector<index_type> dims);
     llm_tensor(std::string name, std::vector<index_type> dims, bool col_major);
 
-    index_type size(index_type d);
+    index_type ndim() { return dims.size(); }
+    index_type size(index_type d) { return dims.at(d); }
+    index_type lsize(index_type d) { return ldims.at(d); }
     
     void to_zero();
     void to_rand();
@@ -48,6 +50,7 @@ namespace llmcpp
     value_type& operator()(index_type i, index_type j, index_type k, index_type l);
 
     value_type max_diff(this_type& tnsr);
+    value_type max_reldiff(this_type& tnsr);
 
     typename std::vector<value_type>::iterator begin();
     typename std::vector<value_type>::iterator end();
@@ -165,13 +168,6 @@ namespace llmcpp
     initialise(name, dims, col_major);
   }
 
-  template<typename index_type, typename value_type>
-  index_type llm_tensor<index_type, value_type>::size(index_type d)
-  {
-    assert(d<dims.size());
-    return dims.at(d);
-  }
-  
   template<typename index_type, typename value_type>
   void llm_tensor<index_type, value_type>::to_zero()
   {
@@ -339,6 +335,19 @@ namespace llmcpp
   template<typename index_type, typename value_type>
   value_type llm_tensor<index_type, value_type>::max_diff(this_type& tnsr)
   {
+    if(dims.size()!=tnsr.ndim())
+      {
+	LOG_S(FATAL) << "mismatching dimensions for tensors";
+      }
+
+    for(int d=0; d<dims.size(); d++)
+      {
+	if(dims.at(d)!=tnsr.size(d))
+	  {
+	    LOG_S(FATAL) << "mismatching dimensions for tensors";
+	  }
+      }
+        
     value_type result = 0, delta=0;
     
     auto itr_j = tnsr.begin();
@@ -346,6 +355,41 @@ namespace llmcpp
       {
 	delta = std::abs(*itr_i-*itr_j);
 	result = std::max(delta, result); 
+      }
+
+    return result;
+  }
+
+  template<typename index_type, typename value_type>
+  value_type llm_tensor<index_type, value_type>::max_reldiff(this_type& tnsr)
+  {
+    if(dims.size()!=tnsr.ndim())
+      {
+	LOG_S(FATAL) << "mismatching dimensions for tensors";
+      }
+
+    for(int d=0; d<dims.size(); d++)
+      {
+	if(dims.at(d)!=tnsr.size(d))
+	  {
+	    LOG_S(FATAL) << "mismatching dimensions for tensors";
+	  }
+      }
+    
+    value_type result = 0, diff=0, value=0;
+    
+    auto itr_j = tnsr.begin();
+    for(auto itr_i=weights->begin(); itr_i!=weights->end() and itr_j!=tnsr.end(); itr_i++, itr_j++)
+      {
+	value = std::max(std::abs(*itr_i), std::abs(*itr_j));
+	diff = std::abs(*itr_i-*itr_j);
+
+	if(value>1.0)
+	  {
+	    diff = diff/value;
+	  }
+	
+	result = std::max(diff, result); 
       }
 
     return result;
