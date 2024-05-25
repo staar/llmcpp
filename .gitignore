@@ -1,3 +1,7 @@
+*~
+build/**
+externals/**
+
 # dot files and such
 .vscode
 .venv
