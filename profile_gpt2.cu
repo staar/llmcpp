@@ -27,42 +27,9 @@ the profile.ncu-rep from a cloud box to local to pretty view.
 #define TESTING
 #include "train_gpt2.cu"
 
-int main() {
-
-    // set up the device
-    int deviceIdx = 0;
-    cudaCheck(cudaSetDevice(deviceIdx));
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, deviceIdx);
-    printf("[System]\n");
-    printf("Device %d: %s\n", deviceIdx, deviceProp.name);
-
-    cuda_num_SMs = deviceProp.multiProcessorCount;
-    cuda_threads_per_SM = deviceProp.maxThreadsPerMultiProcessor;
-    cuda_arch_major = deviceProp.major;
-    cuda_arch_minor = deviceProp.minor;
-
-    cudaCheck(cudaStreamCreate(&main_stream));
-    cudaEventCreateWithFlags(&main_event, cudaEventDisableTiming);
-    cudaEventCreateWithFlags(&loss_event, cudaEventDisableTiming);
-    for (int i = 0; i < num_parallel_streams; i++) {
-        cudaCheck(cudaStreamCreate(&parallel_streams[i]));
-        cudaEventCreateWithFlags(&parallel_events[i], cudaEventDisableTiming);
-    }
-
-    // setup cuBLAS and cuBLASLt
-    cublasCheck(cublasCreate(&cublas_handle));
-    cublasCheck(cublasSetStream(cublas_handle, main_stream));
-    cublasCheck(cublasLtCreate(&cublaslt_handle));
-    // TF32 precision is equivalent to torch.set_float32_matmul_precision('high')
-    int enable_tf32 = deviceProp.major >= 8 ? 1 : 0;
-    printf("enable_tf32: %d\n", enable_tf32);
-    cublas_compute_type = enable_tf32 ? CUBLAS_COMPUTE_32F_FAST_TF32 : CUBLAS_COMPUTE_32F;
-    cublasMath_t cublas_math_mode = enable_tf32 ? CUBLAS_TF32_TENSOR_OP_MATH : CUBLAS_DEFAULT_MATH;
-    cublasCheck(cublasSetMathMode(cublas_handle, cublas_math_mode));
-    // setup the (global) cuBLASLt workspace
-    cudaCheck(cudaMalloc(&cublaslt_workspace, cublaslt_workspace_size));
-    create_cudnn();
+int main(int argc, char *argv[]) {
+    multi_gpu_config = multi_gpu_config_init(&argc, &argv);
+    common_start(true, true);
 
     // build the GPT-2 model from a checkpoint
     GPT2 model;
@@ -82,20 +49,16 @@ int main() {
 
     // override number of layers to 1 because all layers repeat the same kernels, only profile once
     model.config.num_layers = 1;
+    set_zero_configs(&multi_gpu_config, 0, model.num_parameters);
 
     // do a training step
     gpt2_forward(&model, x, y, B, T);
     gpt2_zero_grad(&model);
-    gpt2_backward(&model);
-    gpt2_update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, 1);
+    gpt2_backward(&model, x);
+    gpt2_update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, 1.f, 1, &multi_gpu_config);
     cudaCheck(cudaDeviceSynchronize()); // finish all CUDA work to get correct precise timings
 
     // free
-    gpt2_free(&model);
-    destroy_cudnn();
-    cudaCheck(cudaFree(cublaslt_workspace));
-    cublasCheck(cublasDestroy(cublas_handle));
-    cublasCheck(cublasLtDestroy(cublaslt_handle));
-
+    common_free(model);
     return 0;
 }
