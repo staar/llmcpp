@@ -19,7 +19,7 @@ bool parse_arguments(int argc, char *argv[], nlohmann::json& args)
   cxxopts::Options options("llm", "llm");
 
   options.add_options()
-    ("m,mode", "mode [create-configs,train,predict]",
+    ("m,mode", "mode [create-configs,read,apply-tokenizer,train,predict]",
      cxxopts::value<std::string>()->default_value("predict"))
     ("c,config", "configuration-file",
      cxxopts::value<std::string>()->default_value("null"))
@@ -37,19 +37,19 @@ bool parse_arguments(int argc, char *argv[], nlohmann::json& args)
   if(result.count("mode")==0)
     {
       LOG_S(WARNING) << "`mode` is a required and needs to be one of "
-		     << "`create-configs`, `train` or `predict`";
+		     << "`create-configs`, `read`, `train` or `predict`";
       return false;
     }
 
   std::string mode = result["mode"].as<std::string>();
   args["mode"] = mode;
   
-  std::set<std::string> modes = {"create-configs","train","predict","test"};
+  std::set<std::string> modes = {"create-configs", "read", "apply-tokenizer", "train", "predict", "test"};
   if(modes.count(mode)==0)
     {
       LOG_S(WARNING) << "mode `" << mode
 		     << "` needs to be one of "
-		     << "`create-configs`, `train` or `predict`";
+		     << "`create-configs`, `read`, `train` or `predict`";
       return false;
     }
   
@@ -186,11 +186,21 @@ int main(int argc, char *argv[])
 	  ofs << config;
 	}
     }
-  else if(mode=="train-tokenize")
+  else if(mode=="train-tokenizer")
     {
     }
-  else if(mode=="apply-tokenize")
+  else if(mode=="apply-tokenizer")
     {
+      llmcpp::gpt2_tokenizer tokenizer;
+      tokenizer.load("../../gpt2-cpp/data/vocab.json",
+		     "../../gpt2-cpp/data/merges.txt");
+      
+      auto tokens = tokenizer.encode("The old wise man was impressed with the sea.");
+      
+      for(auto token:tokens)
+	{
+	  LOG_S(INFO) << "\t" << token << "\t" << tokenizer.decode(token);
+	}
     }
   else if(mode=="train")
     {
@@ -213,8 +223,8 @@ int main(int argc, char *argv[])
 	    }
 	}
 
-      llmcpp::llm_tensor<int, int> itokens("itokens", {B, maxT}, false);
-      llmcpp::llm_tensor<int, int> otokens("otokens", {B, maxT}, false);
+      llmcpp::dense_tensor<int, int> itokens("itokens", {B, maxT}, false);
+      llmcpp::dense_tensor<int, int> otokens("otokens", {B, maxT}, false);
       
       model->to_tensor(inputs, itokens);
       model->to_tensor(outputs, otokens);
@@ -223,6 +233,11 @@ int main(int argc, char *argv[])
       model->backward(itokens, otokens);
       
       model->write("gpt2-model.bin");
+    }
+  else if(mode=="read")
+    {
+      auto mfile = config["model-file"].get<std::string>();
+      model->read_hf_weights(mfile);
     }
   else if(mode=="predict")
     {
@@ -245,8 +260,8 @@ int main(int argc, char *argv[])
 	    }
 	}
 
-      llmcpp::llm_tensor<int, int> itokens("itokens", {B, maxT}, false);
-      llmcpp::llm_tensor<int, int> otokens("otokens", {B, maxT}, false);
+      llmcpp::dense_tensor<int, int> itokens("itokens", {B, maxT}, false);
+      llmcpp::dense_tensor<int, int> otokens("otokens", {B, maxT}, false);
 
       model->to_tensor(inputs, itokens);
       model->to_tensor(outputs, otokens);

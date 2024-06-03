@@ -11,7 +11,7 @@ namespace llmcpp
   template<typename index_type, typename value_type>
   class gpt2_weights
   {
-    typedef llm_tensor<index_type, value_type> llm_tensor_type;
+    typedef dense_tensor<index_type, value_type> llm_tensor_type;
 
   public:
 
@@ -26,6 +26,8 @@ namespace llmcpp
 
     bool initialise(gpt2_model_config& config);
 
+    std::shared_ptr<llm_tensor_type> at(std::string name);
+    
     friend std::ofstream& operator<<(std::ofstream& ofs, const gpt2_weights<index_type, value_type>& weights)
     {
       ofs.write((char*)&weights.V, sizeof(weights.V));
@@ -76,8 +78,8 @@ namespace llmcpp
       ifs >> weights.qkvw;
       ifs >> weights.qkvb;
 
-      ifs >> weights.attnprojw;
-      ifs >> weights.attnprojb;
+      ifs >> weights.attprojw;
+      ifs >> weights.attprojb;
 
       ifs >> weights.ln2w;
       ifs >> weights.ln2b;
@@ -114,6 +116,8 @@ namespace llmcpp
     llm_tensor_type fcprojb; // (L, C)
     llm_tensor_type lnfw; // (C)
     llm_tensor_type lnfb; // (C)
+
+    std::map<std::string, std::shared_ptr<llm_tensor_type> > tensors;
   };
 
   template<typename index_type, typename value_type>
@@ -123,24 +127,37 @@ namespace llmcpp
                                                      index_type maxT):
     V(V), C(C), L(L), maxT(maxT),
 
-    wte("weight-embedding", {V, C}),
-    wpe("positional-embedding", {maxT, C}),
-    ln1w("ln1w", {L, C}),
-    ln1b("ln1b" , {L, C}),
-    qkvw("qkv-weights" , {L, 3*C, C}),
-    qkvb("qkv-bias" , {L, 3*C}),
-    attprojw("attention-weights" , {L, C, C}),
-    attprojb("attention-bias" , {L, C}),
-    ln2w("ln2w" , {L, C}),
-    ln2b("ln2b" , {L, C}),
-    fcw("fcw" , {L, 4*C, C}),
-    fcb("fcb" , {L, 4*C}),
-    fcprojw("fcprojw" , {L, C, 4*C}),
-    fcprojb("fcprojb" , {L, C}),
-    lnfw("lnfw" , {C}),
-    lnfb("lnfb" , {C})
+    wte("token-embedding", {V, C}),
+    wpe("pos-embedding", {maxT, C}),
+    ln1w("ln_1.weight", {L, C}),
+    ln1b("ln_1.bias" , {L, C}),
+    qkvw("attn.qkv.weights" , {L, 3*C, C}),
+    qkvb("attn.qkv.bias" , {L, 3*C}),
+    attprojw("attn.proj.weights" , {L, C, C}),
+    attprojb("attn.proj.bias" , {L, C}),
+    ln2w("ln_2.weight" , {L, C}),
+    ln2b("ln_2.bias" , {L, C}),
+    fcw("mlp.fc.weight" , {L, 4*C, C}),
+    fcb("mlp.fc.bias" , {L, 4*C}),
+    fcprojw("mlp.projw.eight" , {L, C, 4*C}),
+    fcprojb("mlp.proj.bias" , {L, C}),
+    lnfw("ln_f.weight" , {C}),
+    lnfb("ln_f.bias" , {C}),
+
+    tensors({})
   {}
 
+  template<typename index_type, typename value_type>
+  std::shared_ptr<typename gpt2_weights<index_type, value_type>::llm_tensor_type> gpt2_weights<index_type, value_type>::at(std::string name)
+  {
+    if(not tensors.count(name))
+      {
+	tensors[name] = std::make_shared<llm_tensor_type>(name);
+      }
+    
+    return tensors.at(name);
+  }
+  
   template<typename index_type, typename value_type>
   bool gpt2_weights<index_type, value_type>::initialise(gpt2_model_config& config)
   {
@@ -181,116 +198,10 @@ namespace llmcpp
     return true;
   }
 
-  /*
-    template<typename index_type, typename value_type>
-    std::ofstream& operator<<(std::ofstream& ofs, const gpt2_weights<index_type, value_type>& weights)
-    {
-    ofs.write((char*)&weights.V, sizeof(weights.V));
-    ofs.write((char*)&weights.C, sizeof(weights.C));
-    ofs.write((char*)&weights.L, sizeof(weights.L));
-    ofs.write((char*)&weights.maxT, sizeof(weights.maxT));
-
-    ofs << weights.wte;
-    ofs << weights.wpe;
-
-    ofs << weights.ln1w;
-    ofs << weights.ln1b;
-
-    ofs << weights.qkvw;
-    ofs << weights.qkvb;
-
-    ofs << weights.attnprojw;
-    ofs << weights.attnprojb;
-
-    ofs << weights.ln2w;
-    ofs << weights.ln2b;
-
-    ofs << weights.fcw;
-    ofs << weights.fcb;
-
-    ofs << weights.fcprojw;
-    ofs << weights.fcprojb;
-
-    ofs << weights.lnfw;
-    ofs << weights.lnfb;
-
-    return ofs;
-    }
-
-    std::ofstream& operator<<(std::ofstream& ofs, const gpt2_weights<int, float>& weights)
-    {
-    ofs.write((char*)&weights.V, sizeof(weights.V));
-    ofs.write((char*)&weights.C, sizeof(weights.C));
-    ofs.write((char*)&weights.L, sizeof(weights.L));
-    ofs.write((char*)&weights.maxT, sizeof(weights.maxT));
-
-    ofs << weights.wte;
-    ofs << weights.wpe;
-
-    ofs << weights.ln1w;
-    ofs << weights.ln1b;
-
-    ofs << weights.qkvw;
-    ofs << weights.qkvb;
-
-    ofs << weights.attprojw;
-    ofs << weights.attprojb;
-
-    ofs << weights.ln2w;
-    ofs << weights.ln2b;
-
-    ofs << weights.fcw;
-    ofs << weights.fcb;
-
-    ofs << weights.fcprojw;
-    ofs << weights.fcprojb;
-
-    ofs << weights.lnfw;
-    ofs << weights.lnfb;
-
-    return ofs;
-    }
-
-    template<typename index_type, typename value_type>
-    std::ifstream& operator>>(std::ifstream& ifs, gpt2_weights<index_type, value_type>& weights)
-    {
-    ifs.read((char*)&weights.V, sizeof(weights.V));
-    ifs.read((char*)&weights.C, sizeof(weights.C));
-    ifs.read((char*)&weights.L, sizeof(weights.L));
-    ifs.read((char*)&weights.maxT, sizeof(weights.maxT));
-
-    ifs >> weights.wte;
-    ifs >> weights.wpe;
-
-    ifs >> weights.ln1w;
-    ifs >> weights.ln1b;
-
-    ifs >> weights.qkvw;
-    ifs >> weights.qkvb;
-
-    ifs >> weights.attnprojw;
-    ifs >> weights.attnprojb;
-
-    ifs >> weights.ln2w;
-    ifs >> weights.ln2b;
-
-    ifs >> weights.fcw;
-    ifs >> weights.fcb;
-
-    ifs >> weights.fcprojw;
-    ifs >> weights.fcprojb;
-
-    ifs >> weights.lnfw;
-    ifs >> weights.lnfb;
-
-    return ifs;
-    }
-  */
-
   template<typename index_type, typename value_type>
   class gpt2_activations
   {
-    typedef llm_tensor<index_type, value_type> llm_tensor_type;
+    typedef dense_tensor<index_type, value_type> llm_tensor_type;
 
   public:
 

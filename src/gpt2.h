@@ -5,5 +5,7 @@
 
 #include <gpt2/gpt2_tensors.h>
 
+#include <gpt2/gpt2_tokenizer.h>
 #include <gpt2/gpt2_model.h>
+
 

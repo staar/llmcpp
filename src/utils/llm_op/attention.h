@@ -224,7 +224,7 @@ namespace llmcpp
     
     int B=13, T=233, C=56, NH=8;
 
-    llm_tensor<int, float> inp, preatt1, preatt2, att1, att2, out1, out2;
+    dense_tensor<int, float> inp, preatt1, preatt2, att1, att2, out1, out2;
     
     inp.initialise("inp", {B, T, 3*C}, false).to_rand();
 
@@ -450,7 +450,7 @@ namespace llmcpp
     //float* dinp, float* dpreatt, float* datt,
     //float* dout, float* inp, float* att,
     
-    llm_tensor<int, float> dout, inp, att, dinp1, dinp2, dpreatt1, dpreatt2, datt1, datt2;
+    dense_tensor<int, float> dout, inp, att, dinp1, dinp2, dpreatt1, dpreatt2, datt1, datt2;
 
     dout.initialise("dout", {B, T, 3*C}, false).to_rand();
     inp.initialise("inp", {B, T, 3*C}, false).to_rand();

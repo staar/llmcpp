@@ -29,6 +29,9 @@ namespace llmcpp
     dense_tensor(std::string name, std::vector<index_type> dims, bool col_major);
 
     index_type ndim() { return dims.size(); }
+
+    index_type size() { index_type res=1; for(auto dim:ldims) { res *= dim; } return res; }
+   
     index_type size(index_type d) { return dims.at(d); }
     index_type lsize(index_type d) { return ldims.at(d); }
     
@@ -136,6 +139,16 @@ namespace llmcpp
     weights(NULL)
   {}
 
+  template<typename index_type, typename value_type>
+  dense_tensor<index_type, value_type>::dense_tensor(std::string name):
+    name(name),
+    col_major(false),
+    dims({}),
+    ldims({}),
+    steps({}),
+    weights(NULL)
+  {}
+  
   template<typename index_type, typename value_type>
   dense_tensor<index_type, value_type>::dense_tensor(std::vector<index_type> dims):
     name(UNKNOWN_NAME),

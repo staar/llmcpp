@@ -1,5 +1,6 @@
 //-*-C++-*-
 
+/*
 #ifndef LLM_TENSOR_H
 #define LLM_TENSOR_H
 
@@ -103,7 +104,7 @@ namespace llmcpp
       ifs.read((char*)tnsr.dims.data(), dims_len*sizeof(index_type));
       ifs.read((char*)tnsr.ldims.data(), dims_len*sizeof(index_type));
       ifs.read((char*)tnsr.steps.data(), dims_len*sizeof(index_type));
-      ifs.read((char*)tnsr.vals.data(), vals_len*sizeof(value_type));
+      ifs.read((char*)tnsr.weights->data(), vals_len*sizeof(value_type));
 
       return ifs;
     }
@@ -446,56 +447,7 @@ namespace llmcpp
     return size;
   }
 
-  /*
-    template<typename index_type, typename value_type>
-    std::ofstream& operator<<(std::ofstream& ofs, const llm_tensor<index_type, value_type>& tnsr)
-    {
-    uint64_t name_len = tnsr.name.size();
-    uint64_t dims_len = tnsr.dims.size();
-    uint64_t vals_len = tnsr.weights->size();
-
-    LOG_S(INFO) << "writing " << tnsr.name
-    << " [memsize: " << std::scientific << vals_len << "]";
-
-    ofs.write((char*)&name_len, sizeof(name_len));
-    ofs.write((char*)&dims_len, sizeof(dims_len));
-    ofs.write((char*)&vals_len, sizeof(vals_len));
-
-    ofs.write((char*)tnsr.name.data(), name_len*sizeof(char));
-    ofs.write((char*)tnsr.dims.data(), dims_len*sizeof(index_type));
-
-    ofs.write((char*)tnsr.ldims.data(), dims_len*sizeof(index_type));
-    ofs.write((char*)tnsr.steps.data(), dims_len*sizeof(index_type));
-
-    ofs.write((char*)tnsr.weights->data(), vals_len*sizeof(value_type));
-    }
-
-    template<typename index_type, typename value_type>
-    std::ifstream& operator>>(std::ifstream& ifs, llm_tensor<index_type, value_type>& tnsr)
-    {
-    uint64_t name_len, dims_len, vals_len;
-
-    ifs.read((char*)&name_len, sizeof(name_len));
-    ifs.read((char*)&dims_len, sizeof(dims_len));
-    ifs.read((char*)&vals_len, sizeof(vals_len));
-
-    LOG_S(INFO) << "reading " << tnsr.name
-    << " [memsize: " << std::scientific << vals_len << "]";
-
-    tnsr.name.resize(name_len);
-    tnsr.dims.resize(dims_len);
-    tnsr.weights->resize(vals_len);
-
-    ifs.read((char*)tnsr.name.data(), name_len*sizeof(char));
-    ifs.read((char*)tnsr.dims.data(), dims_len*sizeof(index_type));
-    ifs.read((char*)tnsr.ldims.data(), dims_len*sizeof(index_type));
-    ifs.read((char*)tnsr.steps.data(), dims_len*sizeof(index_type));
-    ifs.read((char*)tnsr.vals.data(), vals_len*sizeof(value_type));
-
-    return ifs;
-    }
-  */
-
 }
 
 #endif
+*/

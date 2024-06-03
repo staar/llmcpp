@@ -33,6 +33,8 @@ namespace llmcpp
 
     bool initialise(nlohmann::json config);
 
+    bool read_hf_weights(std::string filename);
+    
     bool read(std::string filename);
     bool write(std::string filename);
 
@@ -40,13 +42,13 @@ namespace llmcpp
     int get_maxT() { return model_config.max_seq_len; }
 
     int to_tensor(std::vector<std::vector<index_type> >& tokens,
-                  llm_tensor<index_type, int>& tensor);
+                  dense_tensor<index_type, int>& tensor);
 
-    void forward(llm_tensor<index_type, int>& itokens,
-                 llm_tensor<index_type, int>& otokens);
+    void forward(dense_tensor<index_type, int>& itokens,
+                 dense_tensor<index_type, int>& otokens);
 
-    void backward(llm_tensor<index_type, int>& itokens,
-                  llm_tensor<index_type, int>& otokens);
+    void backward(dense_tensor<index_type, int>& itokens,
+                  dense_tensor<index_type, int>& otokens);
 
   private:
 
@@ -119,20 +121,85 @@ namespace llmcpp
     return true;
   }
 
+  /* 
+   * Needs to be synced with the `llmcpp/download_weights.py` file
+   */
   template<typename index_type, typename value_type>
-  bool gpt2_model<index_type, value_type>::read(std::string filename)
+  bool gpt2_model<index_type, value_type>::read_hf_weights(std::string filename)
   {
-    std::ofstream ifs(filename.c_str(), std::ios::binary);
+    std::ifstream ifs(filename.c_str(), std::ios::binary);
 
     if(not ifs)
       {
         return false;
       }
 
-    ifs >> weights;
+    // read the `value_type`
+    {
+      int32_t dtype_len;
+      ifs.read((char*)&dtype_len, sizeof(dtype_len));
+      
+      LOG_S(INFO) << "dtype-len: "<< dtype_len;
+      
+      std::string dtype(dtype_len, ' ');
+      ifs.read(dtype.data(), sizeof(char)*dtype_len);
+      
+      LOG_S(INFO) << "dtype: "<< dtype;
+    }
+
+    while(!ifs.eof())
+      {
+	int32_t name_len;
+	ifs.read((char*)&name_len, sizeof(name_len));
+	
+	LOG_S(INFO) << "name-len: "<< name_len;
+	
+	std::string name(name_len, ' ');
+	ifs.read(name.data(), sizeof(char)*name_len);
+	
+	LOG_S(INFO) << "layer-name: "<< name;
+	
+	int32_t weights_ndim;
+	ifs.read((char*)&weights_ndim, sizeof(weights_ndim));
+	
+	LOG_S(INFO) << "weights-ndim: "<< weights_ndim;
+	
+	std::vector<int32_t> weights_dim(weights_ndim,0);
+	ifs.read((char*)weights_dim.data(), weights_ndim*sizeof(int32_t));
+	
+	for(auto _:weights_dim)
+	  {
+	    LOG_S(INFO) << " => " << _;
+	  }
+	
+	auto tnsr = weights.at(name);
+	
+	tnsr->initialise(name, weights_dim, weights_dim, false);
+	ifs.read((char*)tnsr->ptr(), tnsr->size()*sizeof(value_type));
+
+	if(tnsr->ndim()==2)
+	  {
+	    LOG_S(INFO) << (*tnsr)(0,1);
+	  }
+      }
+    
     return true;
   }
 
+  template<typename index_type, typename value_type>
+  bool gpt2_model<index_type, value_type>::read(std::string filename)
+  {
+    std::ifstream ifs(filename.c_str(), std::ios::binary);
+
+    if(not ifs)
+      {
+        return false;
+      }
+      
+    ifs >> weights;
+    return true;
+  }
+  
   template<typename index_type, typename value_type>
   bool gpt2_model<index_type, value_type>::write(std::string filename)
   {
@@ -149,7 +216,7 @@ namespace llmcpp
 
   template<typename index_type, typename value_type>
   int gpt2_model<index_type, value_type>::to_tensor(std::vector<std::vector<index_type> >& tokens,
-                                                    llm_tensor<index_type, int>& tensor)
+                                                    dense_tensor<index_type, int>& tensor)
   {
     int max_len = 0;
 
@@ -168,8 +235,8 @@ namespace llmcpp
   }
 
   template<typename index_type, typename value_type>
-  void gpt2_model<index_type, value_type>::forward(llm_tensor<index_type, int>& itokens,
-                                                   llm_tensor<index_type, int>& otokens)
+  void gpt2_model<index_type, value_type>::forward(dense_tensor<index_type, int>& itokens,
+                                                   dense_tensor<index_type, int>& otokens)
   {
     // convenience parameters (size_t to help prevent int overflow)
     int V = model_config.vocab_size;
@@ -283,8 +350,8 @@ namespace llmcpp
   }
 
   template<typename index_type, typename value_type>
-  void gpt2_model<index_type, value_type>::backward(llm_tensor<index_type, int>& itokens,
-                                                    llm_tensor<index_type, int>& otokens)
+  void gpt2_model<index_type, value_type>::backward(dense_tensor<index_type, int>& itokens,
+                                                    dense_tensor<index_type, int>& otokens)
   {
     // convenience parameters (size_t to help prevent int overflow)
     int V = model_config.vocab_size;

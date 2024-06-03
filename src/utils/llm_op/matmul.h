@@ -120,7 +120,7 @@ namespace llmcpp
   {
     int B=3, T=5, C=7, OC=13;
 
-    llm_tensor<int, float> A, W, C1, C2;
+    dense_tensor<int, float> A, W, C1, C2;
     A.initialise("A", {B, T, C}, false).to_rand();
     W.initialise("W", {OC, C}, false).to_rand();
 
@@ -141,7 +141,7 @@ namespace llmcpp
   {
     int B=3, T=5, C=7, OC=13;
 
-    llm_tensor<int, float> inp, dinp1, dinp2, weight, dweight1, dweight2, dout;
+    dense_tensor<int, float> inp, dinp1, dinp2, weight, dweight1, dweight2, dout;
 
     inp.initialise("inp", {B, T, C}, false).to_rand();
     weight.initialise("weight", {OC, C}, false).to_rand();
