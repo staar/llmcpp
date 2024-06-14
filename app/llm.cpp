@@ -192,8 +192,8 @@ int main(int argc, char *argv[])
   else if(mode=="apply-tokenizer")
     {
       llmcpp::gpt2_tokenizer tokenizer;
-      tokenizer.load("../../gpt2-cpp/data/vocab.json",
-		     "../../gpt2-cpp/data/merges.txt");
+      tokenizer.load("../resources/tokenizers/gpt2/vocab.json",
+		     "../resources/tokenizers/gpt2/merges.txt");
       
       auto tokens = tokenizer.encode("The old wise man was impressed with the sea.");
       
