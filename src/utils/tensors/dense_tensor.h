@@ -34,6 +34,13 @@ namespace llmcpp
    
     index_type size(index_type d) { return dims.at(d); }
     index_type lsize(index_type d) { return ldims.at(d); }
+
+    bool update_size(index_type d, index_type ndim)
+    {
+      assert(d<dims.size());
+      assert(ndim<ldims.at(d));
+      dims.at(d) = ndim;
+    }
     
     void to_zero();
     void to_rand();
@@ -110,7 +117,7 @@ namespace llmcpp
       ifs.read((char*)tnsr.dims.data(), dims_len*sizeof(index_type));
       ifs.read((char*)tnsr.ldims.data(), dims_len*sizeof(index_type));
       ifs.read((char*)tnsr.steps.data(), dims_len*sizeof(index_type));
-      ifs.read((char*)tnsr.vals.data(), vals_len*sizeof(value_type));
+      ifs.read((char*)tnsr.weights->data(), vals_len*sizeof(value_type));
 
       return ifs;
     }
@@ -337,8 +344,8 @@ namespace llmcpp
     assert(dims.size()==4);
     assert(0<=i and i<dims.at(0));
     assert(0<=j and j<dims.at(1));
-    assert(0<=k and j<dims.at(2));
-    assert(0<=l and j<dims.at(3));
+    assert(0<=k and k<dims.at(2));
+    assert(0<=l and l<dims.at(3));
 
     index_type ind = 0;
     ind += steps.at(0)*i;

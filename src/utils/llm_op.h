@@ -45,6 +45,8 @@ namespace blas
 
 #include <utils/blas.h>
 
+
+#include <llm_op/encoder.h>
 #include <llm_op/matmul.h>
 #include <llm_op/attention.h>
 
@@ -55,7 +57,8 @@ namespace llmcpp
   class llm_base_op
   {};
   */
-  
+
+  /*
   template<typename index_type, typename value_type>
   class encoder
   {
@@ -117,7 +120,8 @@ namespace llmcpp
       }
     }
   }
-
+*/
+  
   template<typename index_type, typename value_type>
   class layernorm
   {

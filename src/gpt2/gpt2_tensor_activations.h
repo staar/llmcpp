@@ -1,208 +1,30 @@
 //-*-C++-*-
 
-#ifndef GPT2_TENSORS_H
-#define GPT2_TENSORS_H
+#ifndef GPT2_TENSOR_ACTIVATIONS_H
+#define GPT2_TENSOR_ACTIVATIONS_H
 
 #include <utils/llm_tensor.h>
 
 namespace llmcpp
 {
-
-  template<typename index_type, typename value_type>
-  class gpt2_weights
-  {
-    typedef dense_tensor<index_type, value_type> llm_tensor_type;
-
-  public:
-
-    gpt2_weights() {}
-
-    gpt2_weights(index_type V,
-                 index_type C,
-                 index_type L,
-                 index_type maxT);
-
-    gpt2_weights(const nlohmann::json& config);
-
-    bool initialise(gpt2_model_config& config);
-
-    std::shared_ptr<llm_tensor_type> at(std::string name);
-    
-    friend std::ofstream& operator<<(std::ofstream& ofs, const gpt2_weights<index_type, value_type>& weights)
-    {
-      ofs.write((char*)&weights.V, sizeof(weights.V));
-      ofs.write((char*)&weights.C, sizeof(weights.C));
-      ofs.write((char*)&weights.L, sizeof(weights.L));
-      ofs.write((char*)&weights.maxT, sizeof(weights.maxT));
-
-      ofs << weights.wte;
-      ofs << weights.wpe;
-
-      ofs << weights.ln1w;
-      ofs << weights.ln1b;
-
-      ofs << weights.qkvw;
-      ofs << weights.qkvb;
-
-      ofs << weights.attprojw;
-      ofs << weights.attprojb;
-
-      ofs << weights.ln2w;
-      ofs << weights.ln2b;
-
-      ofs << weights.fcw;
-      ofs << weights.fcb;
-
-      ofs << weights.fcprojw;
-      ofs << weights.fcprojb;
-
-      ofs << weights.lnfw;
-      ofs << weights.lnfb;
-
-      return ofs;
-    }
-
-    friend std::ifstream& operator>>(std::ifstream& ifs, gpt2_weights<index_type, value_type>& weights)
-    {
-      ifs.read((char*)&weights.V, sizeof(weights.V));
-      ifs.read((char*)&weights.C, sizeof(weights.C));
-      ifs.read((char*)&weights.L, sizeof(weights.L));
-      ifs.read((char*)&weights.maxT, sizeof(weights.maxT));
-
-      ifs >> weights.wte;
-      ifs >> weights.wpe;
-
-      ifs >> weights.ln1w;
-      ifs >> weights.ln1b;
-
-      ifs >> weights.qkvw;
-      ifs >> weights.qkvb;
-
-      ifs >> weights.attprojw;
-      ifs >> weights.attprojb;
-
-      ifs >> weights.ln2w;
-      ifs >> weights.ln2b;
-
-      ifs >> weights.fcw;
-      ifs >> weights.fcb;
-
-      ifs >> weights.fcprojw;
-      ifs >> weights.fcprojb;
-
-      ifs >> weights.lnfw;
-      ifs >> weights.lnfb;
-
-      return ifs;
-    }
-
-  public:
-
-    index_type V, Vp, C, L, maxT;
-
-    llm_tensor_type wte; // (V, C)
-    llm_tensor_type wpe; // (maxT, C)
-    llm_tensor_type ln1w; // (L, C)
-    llm_tensor_type ln1b; // (L, C)
-    llm_tensor_type qkvw; // (L, 3*C, C)
-    llm_tensor_type qkvb; // (L, 3*C)
-    llm_tensor_type attprojw; // (L, C, C)
-    llm_tensor_type attprojb; // (L, C)
-    llm_tensor_type ln2w; // (L, C)
-    llm_tensor_type ln2b; // (L, C)
-    llm_tensor_type fcw; // (L, 4*C, C)
-    llm_tensor_type fcb; // (L, 4*C)
-    llm_tensor_type fcprojw; // (L, C, 4*C)
-    llm_tensor_type fcprojb; // (L, C)
-    llm_tensor_type lnfw; // (C)
-    llm_tensor_type lnfb; // (C)
-
-    std::map<std::string, std::shared_ptr<llm_tensor_type> > tensors;
-  };
-
-  template<typename index_type, typename value_type>
-  gpt2_weights<index_type, value_type>::gpt2_weights(index_type V,
-                                                     index_type C,
-                                                     index_type L,
-                                                     index_type maxT):
-    V(V), C(C), L(L), maxT(maxT),
-
-    wte("token-embedding", {V, C}),
-    wpe("pos-embedding", {maxT, C}),
-    ln1w("ln_1.weight", {L, C}),
-    ln1b("ln_1.bias" , {L, C}),
-    qkvw("attn.qkv.weights" , {L, 3*C, C}),
-    qkvb("attn.qkv.bias" , {L, 3*C}),
-    attprojw("attn.proj.weights" , {L, C, C}),
-    attprojb("attn.proj.bias" , {L, C}),
-    ln2w("ln_2.weight" , {L, C}),
-    ln2b("ln_2.bias" , {L, C}),
-    fcw("mlp.fc.weight" , {L, 4*C, C}),
-    fcb("mlp.fc.bias" , {L, 4*C}),
-    fcprojw("mlp.projw.eight" , {L, C, 4*C}),
-    fcprojb("mlp.proj.bias" , {L, C}),
-    lnfw("ln_f.weight" , {C}),
-    lnfb("ln_f.bias" , {C}),
-
-    tensors({})
-  {}
-
-  template<typename index_type, typename value_type>
-  std::shared_ptr<typename gpt2_weights<index_type, value_type>::llm_tensor_type> gpt2_weights<index_type, value_type>::at(std::string name)
-  {
-    if(not tensors.count(name))
-      {
-	tensors[name] = std::make_shared<llm_tensor_type>(name);
-      }
-    
-    return tensors.at(name);
-  }
-  
-  template<typename index_type, typename value_type>
-  bool gpt2_weights<index_type, value_type>::initialise(gpt2_model_config& config)
-  {
-    LOG_S(INFO) << "initialising the GPT2 weights ...";
-    
-    V = config.vocab_size;
-    Vp = config.padded_vocab_size;
-    C = config.channels;
-    L = config.num_layers;
-    maxT = config.max_seq_len;
-
-    //LOG_S(INFO) << "V = " << V << << "Vp = " << Vp << "; C = " << C << "; L = " << L << "; maxT = " << maxT;
-    
-    wte.initialise("weight-embedding", {V, C}, {Vp, C}, false);
-    wpe.initialise("positional-embedding", {maxT, C}, false);
-
-    ln1w.initialise("ln1w", {L, C}, false);
-    ln1b.initialise("ln1b" , {L, C}, false);
-
-    qkvw.initialise("qkv-weights" , {L, 3*C, C}, false);
-    qkvb.initialise("qkv-bias" , {L, 3*C}, false);
-
-    attprojw.initialise("attention-weights" , {L, C, C}, false);
-    attprojb.initialise("attention-bias" , {L, C}, false);
-
-    ln2w.initialise("ln2w" , {L, C}, false);
-    ln2b.initialise("ln2b" , {L, C}, false);
-
-    fcw.initialise("fcw" , {L, 4*C, C}, false);
-    fcb.initialise("fcb" , {L, 4*C}, false);
-
-    fcprojw.initialise("fcprojw" , {L, C, 4*C}, false);
-    fcprojb.initialise("fcprojb" , {L, C}, false);
-
-    lnfw.initialise("lnfw" , {C}, false);
-    lnfb.initialise("lnfb" , {C}, false);
-
-    return true;
-  }
-
   template<typename index_type, typename value_type>
   class gpt2_activations
   {
     typedef dense_tensor<index_type, value_type> llm_tensor_type;
 
+    const static inline std::vector<std::string> names =
+      {
+       "encoded",
+       "ln1", "ln1_mean", "ln1_rstd",
+       "qkv", "atty", "preatt", "att", "attproj",
+       "residual2",
+       "ln2", "ln2_mean", "ln2_rstd",
+       "fch", "fch_gelu", "fcproj",
+       "residual3",       
+       "lnf", "lnf_mean", "lnf_rstd",
+       "logits", "probs", "losses"
+      };
+    
   public:
 
     gpt2_activations() {}
@@ -215,6 +37,11 @@ namespace llmcpp
                      index_type V); // vocabulary size
 
     bool initialise(gpt2_model_config& config);
+
+    std::shared_ptr<llm_tensor_type> at(std::string name, bool strict=true);
+
+    value_type* ptr(std::string name);
+    value_type* ptr(std::string name, index_type layer);
     
     //gpt2_activations(const nlohmann::json& config);
 
@@ -225,6 +52,7 @@ namespace llmcpp
 
     index_type L, B, T, C, NH, V, Vp;
 
+    /*
     llm_tensor_type encoded; // (B, T, C)
 
     llm_tensor_type ln1; // (L, B, T, C)
@@ -250,6 +78,9 @@ namespace llmcpp
     llm_tensor_type logits; // (B, T, V)
     llm_tensor_type probs; // (B, T, V)
     llm_tensor_type losses; // (B, T)
+    */
+    
+    std::map<std::string, std::shared_ptr<llm_tensor_type> > tensors;
   };
 
   template<typename index_type, typename value_type>
@@ -259,8 +90,9 @@ namespace llmcpp
                                                              index_type C,
                                                              index_type NH,
                                                              index_type V):
-    L(L), B(B), T(T), C(C), NH(NH), V(V),
+    L(L), B(B), T(T), C(C), NH(NH), V(V)//,
 
+    /*
     encoded("encoded", {B, T, C}),
     ln1("layer_norm_1", {L, B, T, C}),
     ln1_mean("layer_norm_1_mean", {L, B, T}),
@@ -284,6 +116,7 @@ namespace llmcpp
     logits("logits", {B, T, V}),
     probs("probs", {B, T, V}),
     losses("losses", {B, T})
+    */
   {}
 
   template<typename index_type, typename value_type>
@@ -298,7 +131,16 @@ namespace llmcpp
     NH = config.num_heads;
     V = config.vocab_size;
     Vp = config.padded_vocab_size;
+
+    LOG_S(INFO) << B << "\t"
+		<< T << "\t"
+		<< L << "\t"
+		<< C << "\t"
+		<< NH << "\t"
+		<< V << "\t"
+		<< Vp;
     
+    /*
     encoded.initialise("encoded", {B, T, C}, false);
 
     ln1.initialise("layer_norm_1", {L, B, T, C}, false);
@@ -331,8 +173,66 @@ namespace llmcpp
     probs.initialise("probs", {B, T, V}, {B, T, Vp}, false);
 
     losses.initialise("losses", {B, T}, false);
+    */
 
+    for(auto name:names)
+      {
+	tensors[name] = std::make_shared<llm_tensor_type>(name);
+      }
+    
+    tensors.at("encoded")->initialise("encoded", {B, T, C}, false);
+    
+    tensors.at("ln1")->initialise("layer_norm_1", {L, B, T, C}, false);
+    tensors.at("ln1_mean")->initialise("layer_norm_1_mean", {L, B, T}, false);
+    tensors.at("ln1_rstd")->initialise("layer_norm_1_rstd", {L, B, T}, false);
+    
+    tensors.at("qkv")->initialise("qkv", {L, B, T, 3*C}, false);
+    tensors.at("atty")->initialise("atty", {L, B, T, C}, false);
+    tensors.at("preatt")->initialise("preattn", {L, B, NH, T, T}, false);
+    tensors.at("att")->initialise("att", {L, B, NH, T, T}, false);
+    tensors.at("attproj")->initialise("attproj", {L, B, T, C}, false);
+    
+    tensors.at("residual2")->initialise("residual2", {L, B, T, C}, false);
+    
+    tensors.at("ln2")->initialise("layer_norm_2", {L, B, T, C}, false);
+    tensors.at("ln2_mean")->initialise("layer_norm_2_mean", {L, B, T}, false);
+    tensors.at("ln2_rstd")->initialise("layer_norm_2_rstd", {L, B, T}, false);
+    
+    tensors.at("fch")->initialise("fch", {L, B, T, 4*C}, false);
+    tensors.at("fch_gelu")->initialise("fch_gelu", {L, B, T, 4*C}, false);
+    tensors.at("fcproj")->initialise("fcproj", {L, B, T, C}, false);
+    
+    tensors.at("residual3")->initialise("residual3", {L, B, T, C}, false);
+    
+    tensors.at("lnf")->initialise("layer_norm_f", {B, T, C}, false);
+    tensors.at("lnf_mean")->initialise("layer_norm_f_mean", {B, T}, false);
+    tensors.at("lnf_rstd")->initialise("layer_norm_f_rstd", {B, T}, false);
+    
+    tensors.at("logits")->initialise("logits", {B, T, V}, {B, T, Vp}, false);
+    tensors.at("probs")->initialise("probs", {B, T, V}, {B, T, Vp}, false);
+    
+    tensors.at("losses")->initialise("losses", {B, T}, false);
+    
+    LOG_S(INFO) << "finalised GPT2 activations ...";
+    
     return true;
+  }
+
+  template<typename index_type, typename value_type>
+  std::shared_ptr<typename gpt2_activations<index_type, value_type>::llm_tensor_type> gpt2_activations<index_type, value_type>::at(std::string name, bool strict)
+  {
+    assert(find(names.begin(), names.end(), name)!=names.end());
+    
+    if((not strict) and tensors.count(name)==0)
+      {
+        tensors[name] = std::make_shared<llm_tensor_type>(name);
+      }
+    else if(strict and tensors.count(name)==0)
+      {
+	LOG_S(ERROR) << "no tensor with name: " << name;
+      }
+    
+    return tensors.at(name);
   }
   
   template<typename index_type, typename value_type>
@@ -353,6 +253,12 @@ namespace llmcpp
                 << "NH=" << acts.NH << ", "
                 << "V=" << acts.V << ")";
 
+    for(auto name:gpt2_activations<index_type, value_type>::names)
+      {
+	ofs << *(acts.at(name));
+      }
+    
+    /*
     ofs << acts.encoded;
 
     ofs << acts.ln1;
@@ -385,6 +291,7 @@ namespace llmcpp
     ofs << acts.logits;
     ofs << acts.probs;
     ofs << acts.losses;
+    */
   }
 
   template<typename index_type, typename value_type>
@@ -405,6 +312,12 @@ namespace llmcpp
                 << "NH=" << acts.NH << ", "
                 << "V=" << acts.V << ")";
 
+    for(auto name:gpt2_activations<index_type, value_type>::names)
+      {
+	ifs >> *(acts.at(name));
+      }
+
+    /*
     ifs >> acts.encoded;
 
     ifs >> acts.ln1;
@@ -437,7 +350,8 @@ namespace llmcpp
     ifs >> acts.logits;
     ifs >> acts.probs;
     ifs >> acts.losses;
-
+    */
+    
     return ifs;
   }
 

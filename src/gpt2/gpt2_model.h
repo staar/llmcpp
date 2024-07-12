@@ -3,13 +3,16 @@
 #ifndef GPT2_MODEL_H
 #define GPT2_MODEL_H
 
+#include <queue>
+
 namespace llmcpp
 {
 
   template<typename index_type, typename value_type>
   class gpt2_model
   {
-    //typedef llm_tensor<index_type, value_type> llm_tensor_type;
+    typedef gpt2_tokenizer tokenizer_type;
+    
     typedef dense_tensor<index_type, value_type> llm_tensor_type;
     typedef shallow_tensor<index_type, value_type> shl_tensor_type;
 
@@ -33,11 +36,14 @@ namespace llmcpp
 
     bool initialise(nlohmann::json config);
 
+    bool initialise_tokenizer();
     bool read_hf_weights(std::string filename);
     
     bool read(std::string filename);
     bool write(std::string filename);
 
+    std::shared_ptr<tokenizer_type> get_tokenizer() { return tokenizer; }
+    
     int get_B() { return model_config.batch_size; }
     int get_maxT() { return model_config.max_seq_len; }
 
@@ -50,12 +56,18 @@ namespace llmcpp
     void backward(dense_tensor<index_type, int>& itokens,
                   dense_tensor<index_type, int>& otokens);
 
+    void topk(int seql, int k,
+	      dense_tensor<index_type, int>& indices,
+	      dense_tensor<index_type, value_type>& probs);
+	         
   private:
 
     void set_grad_to_zero();
 
   public:
 
+    std::shared_ptr<tokenizer_type> tokenizer;
+    
     gpt2_model_config model_config;
     gpt2_train_config train_config;
 
@@ -76,6 +88,8 @@ namespace llmcpp
 
   template<typename index_type, typename value_type>
   gpt2_model<index_type, value_type>::gpt2_model():
+    tokenizer(NULL),
+    
     model_config(),
     train_config(),
 
@@ -107,11 +121,43 @@ namespace llmcpp
   {
     LOG_S(INFO) << __FUNCTION__;
 
+    /*
+    tokenizer = std::make_shared<llmcpp::gpt2_tokenizer>();
+    tokenizer->load("../resources/tokenizers/gpt2/vocab.json",
+		    "../resources/tokenizers/gpt2/merges.txt");
+    */
+    initialise_tokenizer();
+
     model_config.from_json(config["model"]);
+    
+    if(config.count("hf-model-file")==1)
+      {
+	read_hf_weights(config.at("hf-model-file").get<std::string>());
+	weights.verify_dims(model_config);
+      }
+    else if(config.count("model-file")==1)
+      {
+	std::string filename = config.at("model-file").get<std::string>();
 
-    weights.initialise(model_config);
+	std::ifstream ifs(filename.c_str());
+	if(ifs)
+	  {
+	    ifs >> weights;
+	    weights.verify_dims(model_config);
+	  }
+      }
+    else if(config.count("model")==1)
+      {
+	weights.initialise(model_config);
+      }
+    else
+      {
+	LOG_S(ERROR) << "either provide the `hf-model-file`, `model-file` or `model`";
+	return false;
+      }
+    
     acts.initialise(model_config);
-
+    
     if(config["mode"]=="train")
       {
         weights_grad.initialise(model_config);
@@ -121,6 +167,18 @@ namespace llmcpp
     return true;
   }
 
+  template<typename index_type, typename value_type>
+  bool gpt2_model<index_type, value_type>::initialise_tokenizer()
+  {
+    LOG_S(INFO) << __FUNCTION__;
+
+    tokenizer = std::make_shared<llmcpp::gpt2_tokenizer>();
+    tokenizer->load("../resources/tokenizers/gpt2/vocab.json",
+		    "../resources/tokenizers/gpt2/merges.txt");
+
+    return true;
+  }
+  
   /* 
    * Needs to be synced with the `llmcpp/download_weights.py` file
    */
@@ -153,34 +211,40 @@ namespace llmcpp
 	ifs.read((char*)&name_len, sizeof(name_len));
 	
 	LOG_S(INFO) << "name-len: "<< name_len;
+
+	if(name_len==-1)
+	  {
+	    LOG_S(WARNING) << "detected EOF";
+	    break;
+	  }		 
 	
 	std::string name(name_len, ' ');
 	ifs.read(name.data(), sizeof(char)*name_len);
 	
-	LOG_S(INFO) << "layer-name: "<< name;
+	//LOG_S(INFO) << "layer-name: "<< name;
 	
 	int32_t weights_ndim;
 	ifs.read((char*)&weights_ndim, sizeof(weights_ndim));
 	
-	LOG_S(INFO) << "weights-ndim: "<< weights_ndim;
+	//LOG_S(INFO) << "weights-ndim: "<< weights_ndim;
 	
 	std::vector<int32_t> weights_dim(weights_ndim,0);
 	ifs.read((char*)weights_dim.data(), weights_ndim*sizeof(int32_t));
 	
-	for(auto _:weights_dim)
-	  {
-	    LOG_S(INFO) << " => " << _;
-	  }
+	//for(auto _:weights_dim)
+	//{
+	//LOG_S(INFO) << " => " << _;
+	//}
 	
-	auto tnsr = weights.at(name);
+	auto tnsr = weights.at(name, false);
 	
 	tnsr->initialise(name, weights_dim, weights_dim, false);
 	ifs.read((char*)tnsr->ptr(), tnsr->size()*sizeof(value_type));
 
-	if(tnsr->ndim()==2)
-	  {
-	    LOG_S(INFO) << (*tnsr)(0,1);
-	  }
+	//if(tnsr->ndim()==2)
+	//{
+	//LOG_S(INFO) << (*tnsr)(0,1);
+	//}
       }
     
     return true;
@@ -221,16 +285,18 @@ namespace llmcpp
     int max_len = 0;
 
     tensor.to_zero();
-    for(int i=0; i<tokens.size(); i++)
+    for(int b=0; b<tokens.size(); b++)
       {
-        max_len = tokens.at(i).size()>max_len? tokens.at(i).size():max_len;
+        max_len = tokens.at(b).size()>max_len? tokens.at(b).size():max_len;
 
-        for(int j=0; j<tokens.at(i).size(); j++)
+        for(int t=0; t<tokens.at(b).size(); t++)
           {
-            tensor(i,j) = tokens.at(i).at(j);
+            tensor(b,t) = tokens.at(b).at(t);
           }
       }
-
+    
+    tensor.update_size(1) = max_len; 
+    
     return max_len;
   }
 
@@ -246,51 +312,55 @@ namespace llmcpp
     int C = model_config.channels;
 
     // training parameters
-    int B = itokens.size(0);
-    int T = itokens.size(1);
+    int B = itokens.lsize(0);
+    int T = itokens.lsize(1);
 
     value_type* residual;
 
     // encoding goes into residual[0]
-    encoder_type::forward(acts.encoded.ptr(), itokens.ptr(), weights.wte.ptr(), weights.wpe.ptr(), B, T, C);
+    encoder_type::forward(acts.at("encoded")->ptr(),
+			  itokens.ptr(),
+			  weights.at("token-embedding")->ptr(),
+			  weights.at("pos-embedding")->ptr(),
+			  B, T, C);
 
     for(int l=0; l<L; l++)
       {
-        LOG_S(INFO) << "forwarding layer: " << l;
+        //LOG_S(INFO) << "forwarding layer: " << l;
 
-        residual = l == 0 ? acts.encoded.ptr() : acts.residual3.ptr() + (l-1) * B * T * C;
+        residual = (l==0)? acts.at("encoded")->ptr() : acts.at("residual3")->ptr() + (l-1) * B * T * C;
 
         // get the pointers of the weights for this layer
-        value_type* l_ln1w = weights.ln1w.ptr() + l * C;
-        value_type* l_ln1b = weights.ln1b.ptr() + l * C;
-        value_type* l_qkvw = weights.qkvw.ptr() + l * 3*C * C;
-        value_type* l_qkvb = weights.qkvb.ptr() + l * 3*C;
-        value_type* l_attprojw = weights.attprojw.ptr() + l * C * C;
-        value_type* l_attprojb = weights.attprojb.ptr() + l * C;
-        value_type* l_ln2w = weights.ln2w.ptr() + l * C;
-        value_type* l_ln2b = weights.ln2b.ptr() + l * C;
-        value_type* l_fcw = weights.fcw.ptr() + l * 4*C * C;
-        value_type* l_fcb = weights.fcb.ptr() + l * 4*C;
-        value_type* l_fcprojw = weights.fcprojw.ptr() + l * C * 4*C;
-        value_type* l_fcprojb = weights.fcprojb.ptr() + l * C;
+        value_type* l_ln1w = weights.at("ln_1.weight")->ptr() + l * C;
+        value_type* l_ln1b = weights.at("ln_1.bias")->ptr() + l * C;
+        value_type* l_qkvw = weights.at("attn.qkv.weight")->ptr() + l * 3*C * C;
+        value_type* l_qkvb = weights.at("attn.qkv.bias")->ptr() + l * 3*C;
+        value_type* l_attprojw = weights.at("attn.proj.weight")->ptr() + l * C * C;
+        value_type* l_attprojb = weights.at("attn.proj.bias")->ptr() + l * C;
+        value_type* l_ln2w = weights.at("ln_2.weight")->ptr() + l * C;
+        value_type* l_ln2b = weights.at("ln_2.bias")->ptr() + l * C;
+        value_type* l_fcw = weights.at("mlp.fc.weight")->ptr() + l * 4*C * C;
+        value_type* l_fcb = weights.at("mlp.fc.bias")->ptr() + l * 4*C;
+        value_type* l_fcprojw = weights.at("mlp.proj.weight")->ptr() + l * C * 4*C;
+        value_type* l_fcprojb = weights.at("mlp.proj.bias")->ptr() + l * C;
 
         // get the pointers of the activations for this layer
-        value_type* l_ln1 = acts.ln1.ptr() + l * B * T * C;
-        value_type* l_ln1_mean = acts.ln1_mean.ptr() + l * B * T;
-        value_type* l_ln1_rstd = acts.ln1_rstd.ptr() + l * B * T;
-        value_type* l_qkv = acts.qkv.ptr() + l * B * T * 3*C;
-        value_type* l_atty = acts.atty.ptr() + l * B * T * C;
-        value_type* l_preatt = acts.preatt.ptr() + l * B * NH * T * T;
-        value_type* l_att = acts.att.ptr() + l * B * NH * T * T;
-        value_type* l_attproj = acts.attproj.ptr() + l * B * T * C;
-        value_type* l_residual2 = acts.residual2.ptr() + l * B * T * C;
-        value_type* l_ln2 = acts.ln2.ptr() + l * B * T * C;
-        value_type* l_ln2_mean = acts.ln2_mean.ptr() + l * B * T;
-        value_type* l_ln2_rstd = acts.ln2_rstd.ptr() + l * B * T;
-        value_type* l_fch = acts.fch.ptr() + l * B * T * 4*C;
-        value_type* l_fch_gelu = acts.fch_gelu.ptr() + l * B * T * 4*C;
-        value_type* l_fcproj = acts.fcproj.ptr() + l * B * T * C;
-        value_type* l_residual3 = acts.residual3.ptr() + l * B * T * C;
+        value_type* l_ln1 = acts.at("ln1")->ptr() + l * B * T * C;
+        value_type* l_ln1_mean = acts.at("ln1_mean")->ptr() + l * B * T;
+        value_type* l_ln1_rstd = acts.at("ln1_rstd")->ptr() + l * B * T;
+        value_type* l_qkv = acts.at("qkv")->ptr() + l * B * T * 3*C;
+        value_type* l_atty = acts.at("atty")->ptr() + l * B * T * C;
+        value_type* l_preatt = acts.at("preatt")->ptr() + l * B * NH * T * T;
+        value_type* l_att = acts.at("att")->ptr() + l * B * NH * T * T;
+        value_type* l_attproj = acts.at("attproj")->ptr() + l * B * T * C;
+        value_type* l_residual2 = acts.at("residual2")->ptr() + l * B * T * C;
+        value_type* l_ln2 = acts.at("ln2")->ptr() + l * B * T * C;
+        value_type* l_ln2_mean = acts.at("ln2_mean")->ptr() + l * B * T;
+        value_type* l_ln2_rstd = acts.at("ln2_rstd")->ptr() + l * B * T;
+        value_type* l_fch = acts.at("fch")->ptr() + l * B * T * 4*C;
+        value_type* l_fch_gelu = acts.at("fch_gelu")->ptr() + l * B * T * 4*C;
+        value_type* l_fcproj = acts.at("fcproj")->ptr() + l * B * T * C;
+        value_type* l_residual3 = acts.at("residual3")->ptr() + l * B * T * C;
 
         // now do the forward pass
         layernorm_type::forward(l_ln1, l_ln1_mean, l_ln1_rstd, residual, l_ln1w, l_ln1b, B, T, C);
@@ -310,30 +380,35 @@ namespace llmcpp
 
         residual_type::forward(l_residual3, l_residual2, l_fcproj, B*T*C);
       }
-    LOG_S(INFO) << "done looping layers ...";
-
-    residual = acts.residual3.ptr() + (L-1) * B * T * C; // last residual is in residual3
-    layernorm_type::forward(acts.lnf.ptr(), acts.lnf_mean.ptr(), acts.lnf_rstd.ptr(),
-                            residual, weights.lnfw.ptr(), weights.lnfb.ptr(),
+    //LOG_S(INFO) << "done looping layers ...";
+    
+    residual = acts.at("residual3")->ptr() + (L-1) * B * T * C; // last residual is in residual3
+    layernorm_type::forward(acts.at("lnf")->ptr(), acts.at("lnf_mean")->ptr(), acts.at("lnf_rstd")->ptr(),
+                            residual, weights.at("ln_f.weight")->ptr(), weights.at("ln_f.bias")->ptr(),
                             B, T, C);
-
-    matmul_type::forward(acts.logits.ptr(), acts.lnf.ptr(), weights.wte.ptr(), NULL, B, T, C, Vp);
-    softmax_type::forward(acts.probs.ptr(), acts.logits.ptr(), B, T, V, Vp);
-
+    
+    matmul_type::forward(acts.at("logits")->ptr(),
+			 acts.at("lnf")->ptr(),
+			 weights.at("token-embedding")->ptr(),
+			 NULL, B, T, C, Vp);
+    softmax_type::forward(acts.at("probs")->ptr(), acts.at("logits")->ptr(), B, T, V, Vp);
+    
     // also forward the cross-entropy loss function if we have the targets
     if (itokens.size(0)==otokens.size(0) and
         itokens.size(1)==otokens.size(1))
       {
         LOG_S(INFO) << "compute loss ...";
-        crossentropy_type::forward(acts.losses.ptr(), acts.probs.ptr(), otokens.ptr(), B, T, Vp);
-
+        crossentropy_type::forward(acts.at("losses")->ptr(),
+				   acts.at("probs")->ptr(),
+				   otokens.ptr(), B, T, Vp);
+	
         // for convenience also evaluate the mean loss
         float mean_loss = 0.0f;
         for (int b=0; b<B; b++)
           {
             for (int t=0; t<T; t++)
               {
-                mean_loss += acts.losses(b,t);
+                mean_loss += (*acts.at("losses"))(b,t);
               }
           }
 
@@ -350,9 +425,19 @@ namespace llmcpp
   }
 
   template<typename index_type, typename value_type>
+  void gpt2_model<index_type, value_type>::forward(dense_tensor<index_type, int>& itokens)
+  {
+    encoder_type::forward(acts("encoded"),
+			  itokens,
+			  weights("token-embedding"),
+			  weights("pos-embedding"));    
+  }
+  
+  template<typename index_type, typename value_type>
   void gpt2_model<index_type, value_type>::backward(dense_tensor<index_type, int>& itokens,
                                                     dense_tensor<index_type, int>& otokens)
   {
+    /*
     // convenience parameters (size_t to help prevent int overflow)
     int V = model_config.vocab_size;
     int Vp = model_config.padded_vocab_size;
@@ -470,6 +555,7 @@ namespace llmcpp
     LOG_S(INFO) << "done backwarding layers ...";
 
     encoder_type::backward(weights_grad.wte.ptr(), weights_grad.wpe.ptr(), acts_grad.encoded.ptr(), itokens.ptr(), B, T, C);
+    */
   }
 
   template<typename index_type, typename value_type>
@@ -478,7 +564,78 @@ namespace llmcpp
     weights_grad.to_zero();
     acts_grad.to_zero();
   }
+  
+  template<typename index_type, typename value_type>
+  void gpt2_model<index_type, value_type>::topk(int seql, int maxk,
+						dense_tensor<index_type, int>& indices,
+						dense_tensor<index_type, value_type>& probs)
+  {
+    //LOG_S(INFO) << __FUNCTION__;
+    
+    // convenience parameters (size_t to help prevent int overflow)
+    int V = model_config.vocab_size;
+    //int Vp = model_config.padded_vocab_size;
+    //int L = model_config.num_layers;
+    //int NH = model_config.num_heads;
+    //int C = model_config.channels;
 
+    // training parameters
+    int B = indices.size(0);
+    int T = indices.size(1);
+    int K = indices.size(2);
+
+    assert(seql<=T);
+    assert(maxk<=K);
+    
+    auto& actprobs = *acts.at("probs");
+    
+    typedef std::pair<value_type, index_type> item_type;
+    std::priority_queue<item_type, std::vector<item_type>, std::greater<item_type> > pq={};
+    
+    for(int b=0; b<B; b++)
+      {
+	for(int t=0; t<seql; t++)
+	  {
+	    assert(pq.empty());
+
+	    for(int v=0; v<V; v++)
+	      {
+		value_type p = actprobs(b,t,v);
+		
+		if(pq.size()<maxk)
+		  {
+		    std::pair<value_type, index_type> item(p, v);
+		    pq.push(item);
+		  }
+		else if(pq.top().first<p)
+		  {
+		    std::pair<value_type, index_type> item(p, v);
+		    pq.push(item);
+		    pq.pop();
+		  }
+		else
+		  {}
+	      }
+
+	    assert(pq.size()==maxk);
+	    
+	    int k=maxk-1;
+	    while(pq.size()>0 and k>=0)
+	      {
+		auto top = pq.top();
+		
+		probs(b,t,k) = top.first;
+		indices(b,t,k) = top.second;
+
+		pq.pop();
+		k -= 1;
+	      }
+	    
+	  }
+      }
+
+  }
+  
 }
 
 #endif

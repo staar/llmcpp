@@ -122,8 +122,11 @@ namespace llmcpp
     typedef std::pair<std::string, std::string> BPE;
     typedef std::unordered_map<BPE, size_t, PairHash> BPERanks;
 
-    typedef std::unordered_map<std::string, int64_t> Encoder;
-    typedef std::unordered_map<int64_t, std::string> Decoder;
+    //typedef std::unordered_map<std::string, int64_t> Encoder;
+    //typedef std::unordered_map<int64_t, std::string> Decoder;
+
+    typedef std::unordered_map<std::string, int64_t> encoder_type;
+    typedef std::unordered_map<int64_t, std::string> decoder_type;
 
     // regex to capture proposed token
     static constexpr std::string_view pattern {"'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+"};
@@ -151,8 +154,8 @@ namespace llmcpp
 
     BPERanks m_bpe_ranks;
 
-    Encoder m_encoder;
-    Decoder m_decoder;
+    encoder_type m_encoder;
+    decoder_type m_decoder;
 
     //std::unordered_map<char, std::string> m_byte_encoder;
     //std::unordered_map<std::string, char> m_byte_decoder;
@@ -184,10 +187,15 @@ namespace llmcpp
     // assuming null-terminated string
     merges_file_stream.open(merges_file.data());
 
-    if (!merges_file_stream.good()) {
-      LOG_S(ERROR) << "could not open " << merges_file;
-      return false;
-    }
+    if (!merges_file_stream.good())
+      {
+	LOG_S(ERROR) << "could not open " << merges_file;
+	return false;
+      }
+    else
+      {
+	LOG_S(WARNING) << "reading " << merges_file;
+      }
 
     BPERanks bpe_ranks;
 
@@ -215,6 +223,7 @@ namespace llmcpp
       std::ifstream ifs(vocab_file);
       if(ifs)
         {
+	  LOG_S(WARNING) << "reading " << vocab_file;
           ifs >> doc;
         }
       else
@@ -224,8 +233,8 @@ namespace llmcpp
         }
     }
 
-    Encoder encoder;
-    Decoder decoder;
+    encoder_type encoder;
+    decoder_type decoder;
 
     //cnt=0;
     for (const auto& [key, value] : doc.items())
@@ -276,12 +285,14 @@ namespace llmcpp
 
   std::string gpt2_tokenizer::decode(const int64_t id)
   {
-    std::string decoded_string;
+    std::string decoded_string="";
 
-    std::string decoded_token = m_decoder[id];
-    for (size_t i = 0; i < decoded_token.size();)
+    std::string decoded_token = m_decoder.at(id);
+    for(size_t i=0; i<decoded_token.size(); )
       {
-        int length = codepoint_length(decoded_token[i]);
+        int length = codepoint_length(decoded_token.at(i));
+	assert(i+length<=decoded_token.size());
+	
         decoded_string += m_byte_decoder.at(decoded_token.substr(i, length));
         i+=length;
       }
@@ -291,7 +302,7 @@ namespace llmcpp
 
   std::string gpt2_tokenizer::decode(const std::vector<int64_t>& token_ids)
   {
-    std::string decoded_string;
+    std::string decoded_string="";
     for (const auto& id: token_ids)
       {
         std::string decoded_token = m_decoder[id];
